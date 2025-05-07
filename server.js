@@ -35,6 +35,8 @@ app.use(cors(corsOptions));
 
 const SESSION_COOKIE_NAME = "session";
 
+let firestore = admin.firestore();
+
 // // 🔐 Middleware to protect routes
 // function authenticateSession(req, res, next) {
 //   const sessionCookie = req.cookies[SESSION_COOKIE_NAME] || "";
@@ -89,8 +91,30 @@ app.get("/test", (req, res) => {
 	res.send("database updated");
 });
 
-app.post("/buySeed", (req, res) => {
-	console.log(req.body);
+app.post("/buySeed", async (req, res) => {
+	// TODO: add checks so no injects
+	console.log(req.body.seed);
+	let seedCosts = (await firestore.doc("games/28291038").get()).data()
+		.seedCosts;
+	let playerData = (
+		await firestore
+			.doc("games/28291038/players/" + req.body.userId.toString())
+			.get()
+	).data();
+	if (seedCosts[req.body.seed] * req.body.count > playerData.money) {
+		res.send("no crops for u");
+		console.log("Nah");
+		return;
+	}
+	playerData.money -= seedCosts[req.body.seed] * req.body.count;
+	if (req.body.seed in playerData.seeds) {
+		playerData.seeds[req.body.seed] += req.body.count;
+	} else {
+		playerData.seeds[req.body.seed] = req.body.count;
+	}
+	await firestore
+		.doc("games/28291038/players/" + req.body.userId.toString())
+		.set(playerData);
 	res.send("whee");
 });
 
