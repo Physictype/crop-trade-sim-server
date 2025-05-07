@@ -86,19 +86,21 @@ let firestore = admin.firestore();
 //   res.send(`Hello, user ${req.user.uid}`);
 // });
 
-app.get("/test", (req, res) => {
-	admin.firestore().doc("games/28291038").update({ message: "MUAHAHA" });
-	res.send("database updated");
-});
-
 app.post("/buySeed", async (req, res) => {
 	// TODO: add checks so no injects
+	// TODO: add middleware to verify user
 	console.log(req.body.seed);
-	let seedCosts = (await firestore.doc("games/28291038").get()).data()
-		.seedCosts;
+	let seedCosts = (
+		await firestore.doc("games/" + req.body.gameId.toString()).get()
+	).data().seedCosts;
 	let playerData = (
 		await firestore
-			.doc("games/28291038/players/" + req.body.userId.toString())
+			.doc(
+				"games/" +
+					req.body.gameId.toString() +
+					"/players/" +
+					req.body.userId.toString()
+			)
 			.get()
 	).data();
 	if (seedCosts[req.body.seed] * req.body.count > playerData.money) {
