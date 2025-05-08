@@ -37,19 +37,22 @@ const SESSION_COOKIE_NAME = "session";
 
 let firestore = admin.firestore();
 
-// // 🔐 Middleware to protect routes
-// function authenticateSession(req, res, next) {
-//   const sessionCookie = req.cookies[SESSION_COOKIE_NAME] || "";
-
-//   admin
-//     .auth()
-//     .verifySessionCookie(sessionCookie, true)
-//     .then((decodedClaims) => {
-//       req.user = decodedClaims;
-//       next();
-//     })
-//     .catch(() => res.status(401).send("Unauthorized"));
-// }
+// 🔐 Middleware to protect routes
+function authenticateSession(req, res, next) {
+	const sessionCookie = req.cookies[SESSION_COOKIE_NAME] || "";
+	if (req.user) {
+		res.status(400);
+		return;
+	}
+	admin
+		.auth()
+		.verifySessionCookie(sessionCookie, true)
+		.then((decodedClaims) => {
+			req.user = decodedClaims;
+			next();
+		})
+		.catch(() => res.status(401).send("Unauthorized"));
+}
 
 // // 📥 Login endpoint
 // app.post("/login", async (req, res) => {
@@ -88,9 +91,7 @@ let firestore = admin.firestore();
 
 // TODO: add checks so no injects
 // TODO: add middleware to verify user
-app.post("/progressSeason", async (req,res) => {
-	
-})
+app.post("/progressSeason", async (req, res) => {});
 app.post("/plantSeed", async (req, res) => {
 	let playerData = (
 		await firestore
@@ -102,16 +103,28 @@ app.post("/plantSeed", async (req, res) => {
 			)
 			.get()
 	).data();
-	if (!(req.body.seed in playerData.seeds) || playerData.seeds[req.body.seed]<1) {
-		res.status(403).send("Insufficient Seeds");
+	let cropsList = (
+		await (await firestore.doc("games/" + req.body.gameId.toString())).get()
+	).data().cropsList;
+	if (
+		!(req.body.seed in playerData.seeds) ||
+		playerData.seeds[req.body.seed] < 1
+	) {
+		res.status(400).send("Insufficient Seeds");
+		return;
+	}
+	if (!cropsList.includes(req.body.seed)) {
+		res.status(400).send("That crop is not in play.");
+		return;
 	}
 	if (req.body.idx < 0 || req.body.idx >= playerData.crops.length) {
 		res.status(400).send("Planting out of range.");
+		return;
 	}
 	playerData.seeds[req.body.seed]--;
 	playerData.crops[req.body.idx].stage = 0;
 	playerData.crops[req.body.idx].type = req.body.seed;
-})
+});
 
 app.post("/buySeed", async (req, res) => {
 	console.log(req.body.seed);
@@ -129,7 +142,7 @@ app.post("/buySeed", async (req, res) => {
 			.get()
 	).data();
 	if (seedCosts[req.body.seed] * req.body.count > playerData.money) {
-		res.status(403).send('Insufficient Currency');
+		res.status(403).send("Insufficient Currency");
 		return;
 	}
 	playerData.money -= seedCosts[req.body.seed] * req.body.count;
@@ -139,7 +152,12 @@ app.post("/buySeed", async (req, res) => {
 		playerData.seeds[req.body.seed] = req.body.count;
 	}
 	await firestore
-		.doc("games/28291038/players/" + req.body.userId.toString())
+		.doc(
+			"games/" +
+				req.body.gameId.toString() +
+				"/players/" +
+				req.body.userId.toString()
+		)
 		.set(playerData);
 	res.sendStatus(200);
 });
