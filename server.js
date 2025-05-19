@@ -91,41 +91,79 @@ function authenticateSession(req, res, next) {
 
 // TODO: add checks so no injects
 // TODO: add middleware to verify user
-app.post("/addTrade", authenticateSession, async (req, res) => {
-
-});
-app.post("/runTrades", authenticateSession, async (req, res) => {
-
-})
-app.post("/progressSeason", authenticateSession, async (req, res) => {
-	let admins = [];
-	
-	if (admins.contains(req.user.uid) || true) { // TODO: remove || true please
-		// req.body.gameId
-		let gameDataDoc = await firestore.doc("games/"+req.body.gameId);
-		let gameData = await gameDataDoc.get().data();
-		Object.entries(gameData.players).forEach(([playerId,player]) => {
-			player.plot.forEach((crop) => {
-				if (crop.type != "") {
-					crop.stage ++;
-					if (crop.stage >= gameData.cropsList[crop.type].minSeasons && (gameData.cropsList[crop.type].seasonsMap & (1 << gameData.season) > 0)) {
-						if (crop.type in player.crops) {
-							player.crops[crop.type] ++;
-						} else {
-							player.crops[crop.type] = 1;
-						}
-						crop.type = "";
-						crop.stage = 0;
-					}
-				}
-			})
-		})
-		gameData.season ++;
-		gameDataDoc.update(gameData);
+let admins = [];
+app.post("/createGame", authenticateSession, async (req, res) => {
+	if (admins.contains(req.user.uid) || true) {
 	} else {
 		res.status(401).send("Unauthorized");
 	}
 });
+
+async function startGameUpdateInterval(gameId) {
+	let gameDataDoc = await firestore.doc("games/" + req.body.gameId);
+	let gameData = await gameDataDoc.get().data();
+	gameData.currentRound = 1;
+	let currentTimeLeft = gameData.plantingTime;
+	gameDataDoc.update(gameData);
+	let interval = setInterval(async function () {
+		currentTimeLeft--;
+		if (currentTimeLeft == 0) {
+			let gameData = await gameDataDoc.get().data();
+			if (gameData.roundSection == "planting") {
+				gameData.roundSection = "trading";
+				Object.entries(gameData.players).forEach(
+					([playerId, player]) => {
+						player.plot.forEach((crop) => {
+							if (crop.type != "") {
+								crop.stage++;
+								if (
+									crop.stage >=
+										gameData.cropsList[crop.type]
+											.minSeasons &&
+									gameData.cropsList[crop.type].seasonsMap &
+										(1 << gameData.season > 0)
+								) {
+									if (crop.type in player.crops) {
+										player.crops[crop.type]++;
+									} else {
+										player.crops[crop.type] = 1;
+									}
+									crop.type = "";
+									crop.stage = 0;
+								}
+							}
+						});
+					}
+				);
+				gameData.season++;
+				currentTimeLeft = gameData.tradingTime;
+			} else {
+				gameData.roundSection = "planting";
+				gameData.currentRound++;
+				// trading code here:
+				if (gameData.currentRound > gameData.numRounds) {
+					clearInterval(interval);
+				}
+			}
+			gameDataDoc.update(gameData);
+		}
+	},1000);
+}
+app.post("/startGame", authenticateSession, async (req, res) => {
+	if (admins.contains(req.user.uid) || true) {
+		let gameDataDoc = await firestore.doc("games/" + req.body.gameId);
+		let gameData = await gameDataDoc.get().data();
+		if (gameData.currentRound > 0) {
+			res.status(409).send("Game already started.");
+		} else {
+			startGameUpdateInterval(req.body.gameId);
+		}
+	} else {
+		res.status(401).send("Unauthorized");
+	}
+});
+app.post("/addTrade", authenticateSession, async (req, res) => {});
+app.post("/runTrades", authenticateSession, async (req, res) => {});
 
 app.post("/plantSeed", authenticateSession, async (req, res) => {
 	let playerData = (
