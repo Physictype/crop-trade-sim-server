@@ -5,6 +5,9 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { admin } from "./firebase.js";
 import cors from "cors";
+
+// TODO: install lodash, npm i --save lodash
+// TODO; check for overwrites with object equal
 // import { getDoc } from "firebase";
 
 dotenv.config();
@@ -53,30 +56,15 @@ function authenticateSession(req, res, next) {
 		})
 		.catch(() => res.status(401).send("Unauthorized"));
 }
-
-// // 📥 Login endpoint
-// app.post("/login", async (req, res) => {
-//   const idToken = req.body.idToken;
-
-//   if (!idToken) return res.status(400).send("Missing idToken");
-
-//   const expiresIn = Number(process.env.SESSION_EXPIRES_MS);
-
-//   try {
-//     const sessionCookie = await admin
-//       .auth()
-//       .createSessionCookie(idToken, { expiresIn });
-//     res.cookie(SESSION_COOKIE_NAME, sessionCookie, {
-//       maxAge: expiresIn,
-//       httpOnly: true,
-//       secure: true,
-//       sameSite: "Strict",
-//     });
-//     res.send("Logged in with secure session.");
-//   } catch (err) {
-//     res.status(401).send("Invalid ID token");
-//   }
-// });
+async function checkInGame(req, res, next) {
+	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameData = await gameDataDoc.get().data();
+	if (req.user.uid in gameData.players) {
+		next();
+	} else {
+		return res.status(403).send("You are not in this game.");
+	}
+}
 
 // // 🧼 Logout endpoint
 // app.post("/logout", (req, res) => {
@@ -91,16 +79,74 @@ function authenticateSession(req, res, next) {
 
 // TODO: add checks so no injects
 // TODO: add middleware to verify user
+// TODO: mutex or check for changes??? prevent race conditions
 let admins = [];
 app.post("/createGame", authenticateSession, async (req, res) => {
-	if (admins.contains(req.user.uid) || true) {
+	if (admins.includes(req.user.uid) || true) {
+		// TODO: remove || true
+		let gameData = {
+			players: [],
+			cropsList: req.body.cropsList,
+			currentRound: 0,
+			numRounds: req.body.numRounds,
+			plantingTime: req.body.plantingTime,
+			offeringTime: req.body.offeringTime,
+			tradingTime: req.body.tradingTime,
+			plotWidth: req.body.plotWidth,
+			plotHeight: req.body.plotHeight,
+			roundSection: "planting",
+			season: 0,
+		};
+		// must add checks, but for now its fine
+		async function generateGameID() {
+			// maybe change this function?
+			let currentIds = await getDocs(collection(firestore, "games"));
+			function stringDigit() {
+				return "0123456789"[Math.floor(Math.random() * 10)];
+			}
+			while (true) {
+				let id = "";
+				for (let i = 0; i < 10; i++) {
+					id += stringDigit();
+				}
+				if (!currentIds.includes(id)) {
+					return id;
+				}
+			}
+		}
+		let id = generateGameID();
+		await setDoc(doc(firestore, "games", id), gameData);
+		return res.status(200).send(id);
 	} else {
-		res.status(401).send("Unauthorized");
+		return res.status(401).send("Unauthorized");
 	}
+});
+app.post("/joinGame", authenticateSession, async (req, res) => {
+	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameData = await gameDataDoc.get().data();
+	if (gameData.currentRound != 0) {
+		return res.status(409).send("Game already started.");
+	}
+	if (req.user.uid in gameData.players) {
+		return res.status(409).send("You have already joined the game.");
+	}
+	gameData.players[req.user.uid] = {
+		crops: {},
+		money: gameData.initialMoney,
+		plot: Array.from(
+			Array(gameData.plotWidth * gameData.plotHeight),
+			(x) => {
+				return { type: "", stage: 0 };
+			}
+		),
+		seeds: {},
+	};
+	gameDataDoc.update(gameData);
+	return res.status(200).send("Game joined.");
 });
 
 async function startGameUpdateInterval(gameId) {
-	let gameDataDoc = await firestore.doc("games/" + req.body.gameId);
+	let gameDataDoc = await firestore.doc("games", req.body.gameId);
 	let gameData = await gameDataDoc.get().data();
 	gameData.currentRound = 1;
 	let currentTimeLeft = gameData.plantingTime;
@@ -110,7 +156,7 @@ async function startGameUpdateInterval(gameId) {
 		if (currentTimeLeft == 0) {
 			let gameData = await gameDataDoc.get().data();
 			if (gameData.roundSection == "planting") {
-				gameData.roundSection = "trading";
+				gameData.roundSection = "offering";
 				Object.entries(gameData.players).forEach(
 					([playerId, player]) => {
 						player.plot.forEach((crop) => {
@@ -136,6 +182,8 @@ async function startGameUpdateInterval(gameId) {
 					}
 				);
 				gameData.season++;
+				currentTimeLeft = gameData.offeringTime;
+			} else if (gameData.roundSection == "offering") {
 				currentTimeLeft = gameData.tradingTime;
 			} else {
 				gameData.roundSection = "planting";
@@ -147,79 +195,180 @@ async function startGameUpdateInterval(gameId) {
 			}
 			gameDataDoc.update(gameData);
 		}
-	},1000);
+	}, 1000);
 }
 app.post("/startGame", authenticateSession, async (req, res) => {
-	if (admins.contains(req.user.uid) || true) {
-		let gameDataDoc = await firestore.doc("games/" + req.body.gameId);
+	if (admins.includes(req.user.uid) || true) {
+		let gameDataDoc = await firestore.doc("games", req.body.gameId);
 		let gameData = await gameDataDoc.get().data();
 		if (gameData.currentRound > 0) {
-			res.status(409).send("Game already started.");
+			return res.status(409).send("Game already started.");
 		} else {
 			startGameUpdateInterval(req.body.gameId);
+			return res.status(200).send("Game started.");
 		}
 	} else {
-		res.status(401).send("Unauthorized");
+		return res.status(401).send("Unauthorized");
 	}
 });
-app.post("/addTrade", authenticateSession, async (req, res) => {});
-app.post("/runTrades", authenticateSession, async (req, res) => {});
-
-app.post("/plantSeed", authenticateSession, async (req, res) => {
-	let playerData = (
-		await firestore
+app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
+	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameData = await gameDataDoc.get().data();
+	if (gameData.currentStage != "offering") {
+		return res
+			.status(403)
+			.send("You may only do this during the offering phase.");
+	}
+	let playerDataDoc = await firestore
+		.doc(
+			"games",
+			req.body.gameId.toString(),
+			"players",
+			req.user.uid.toString()
+		)
+		.get();
+	let playerData = playerDataDoc.data();
+	playerData.offers[req.body.crop] = {
+		num: parseInt(req.body.num),
+		pricePer: parseInt(req.body.price),
+	};
+	if (
+		!(
+			playerData.offers[req.body.crop].num <=
+			playerData.crops[req.body.crop]
+		)
+	) {
+		return res
+			.status(403)
+			.send("You are trying to offer more crops than you have.");
+	}
+	playerDataDoc.update(playerData);
+	return res.status(200).send("Crop offered.");
+});
+app.post(
+	"/tradeFromOffer",
+	authenticateSession,
+	checkInGame,
+	async (req, res) => {
+		let gameDataDoc = await firestore.doc("games", req.body.gameId);
+		let gameData = await gameDataDoc.get().data();
+		if (gameData.currentStage != "trading") {
+			return res
+				.status(403)
+				.send("You may only do this during the trading phase.");
+		}
+		if (req.user.uid == req.body.targetId) {
+			return res.status(403).send("You cannot trade with yourself."); // ?
+		}
+		let playerDataDoc = await firestore
 			.doc(
-				"games/" +
-					req.body.gameId.toString() +
-					"/players/" +
-					req.user.uid.toString()
+				"games",
+				req.body.gameId.toString(),
+				"players",
+				req.user.uid.toString()
 			)
-			.get()
-	).data();
+			.get();
+		let otherDataDoc = await firestore
+			.doc(
+				"games",
+				req.body.gameId.toString(),
+				"players",
+				req.body.targetId.toString()
+			)
+			.get();
+		let playerData = playerDataDoc.data();
+		let otherData = otherDataDoc.data();
+		if (
+			playerData.money <
+			req.body.num * otherData.offers[req.body.type].pricePer
+		) {
+			return res.status(422).send("You do not have enough money.");
+		}
+		if (req.body.num > otherData.offers[req.body.type].num) {
+			return res
+				.status(422)
+				.send("That is more than the other player is offering.");
+		}
+		playerData.money -=
+			req.body.num * otherData.offers[req.body.type].pricePer;
+		otherData.money +=
+			req.body.num * otherData.offers[req.body.type].pricePer;
+		if (!(req.body.type in playerDataDoc.crops)) {
+			playerDataDoc.crops[req.body.type] = 0;
+		}
+		playerData.crops[req.body.type] += req.body.num;
+		otherData.crops[req.body.type] -= req.body.num;
+		otherData.offers[req.body.type].num -= req.body.num;
+		playerDataDoc.update(playerData);
+		otherDataDoc.update(otherData);
+		return res.status(200).send("Trade completed.");
+	}
+);
+app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
+	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameData = await gameDataDoc.get().data();
+	if (gameData.currentStage != "planting") {
+		return res
+			.status(403)
+			.send("You may only do this during the planting phase.");
+	}
+	let playerDataDoc = await firestore
+		.doc(
+			"games",
+			req.body.gameId.toString(),
+			"players",
+			req.user.uid.toString()
+		)
+		.get();
+	let playerData = playerDataDoc.data();
+
 	let cropsList = (
-		await (await firestore.doc("games/" + req.body.gameId.toString())).get()
+		await (await firestore.doc("games", req.body.gameId.toString())).get()
 	).data().cropsList;
 
 	if (
 		!(req.body.seed in playerData.seeds) ||
 		playerData.seeds[req.body.seed] < 1
 	) {
-		res.status(422).send("Insufficient Seeds");
-		return;
+		return res.status(422).send("Insufficient Seeds");
 	}
 	if (!cropsList.includes(req.body.seed)) {
-		res.status(422).send("That crop is not in play.");
-		return;
+		return res.status(422).send("That crop is not in play.");
 	}
 	if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
-		res.status(422).send("Planting out of range.");
-		return;
+		return res.status(422).send("Planting out of range.");
 	}
 
 	playerData.seeds[req.body.seed]--;
 	playerData.plot[req.body.idx].stage = 0;
 	playerData.plot[req.body.idx].type = req.body.seed;
+	playerDataDoc.update(playerData);
+	return res.status(200).send("Seed planted.");
 });
 
-app.post("/buySeed", authenticateSession, async (req, res) => {
-	console.log(req.body.seed);
+app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
+	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameData = await gameDataDoc.get().data();
+	if (gameData.currentStage != "planting") {
+		return res
+			.status(403)
+			.send("You may only do this during the planting phase.");
+	}
 	let seedCosts = (
-		await firestore.doc("games/" + req.body.gameId.toString()).get()
+		await firestore.doc("games", req.body.gameId.toString()).get()
 	).data().seedCosts;
-	let playerData = (
-		await firestore
-			.doc(
-				"games/" +
-					req.body.gameId.toString() +
-					"/players/" +
-					req.user.uid.toString()
-			)
-			.get()
-	).data();
+	let playerDataDoc = await firestore
+		.doc(
+			"games",
+			req.body.gameId.toString(),
+			"players",
+			req.user.uid.toString()
+		)
+		.get();
+	let playerData = playerDataDoc.data();
 
 	if (seedCosts[req.body.seed] * req.body.count > playerData.money) {
-		res.status(422).send("Insufficient Currency");
-		return;
+		return res.status(422).send("Insufficient Currency");
 	}
 
 	playerData.money -= seedCosts[req.body.seed] * req.body.count;
@@ -228,15 +377,8 @@ app.post("/buySeed", authenticateSession, async (req, res) => {
 	} else {
 		playerData.seeds[req.body.seed] = req.body.count;
 	}
-	await firestore
-		.doc(
-			"games/" +
-				req.body.gameId.toString() +
-				"/players/" +
-				req.user.uid.toString()
-		)
-		.set(playerData);
-	res.sendStatus(200);
+	playerDataDoc.update(playerData);
+	return res.status(200).send("Seed bought.");
 });
 
 const PORT = process.env.PORT || 3000;
