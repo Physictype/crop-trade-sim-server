@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { admin } from "./firebase.js";
 import cors from "cors";
+import { isEqual } from "lodash";
 
 // TODO: install lodash, npm i --save lodash
 // TODO; check for overwrites with object equal
@@ -66,17 +67,6 @@ async function checkInGame(req, res, next) {
 	}
 }
 
-// // 🧼 Logout endpoint
-// app.post("/logout", (req, res) => {
-//   res.clearCookie(SESSION_COOKIE_NAME);
-//   res.send("Logged out");
-// });
-
-// // 🔒 Protected route
-// app.get("/profile", authenticateSession, (req, res) => {
-//   res.send(`Hello, user ${req.user.uid}`);
-// });
-
 // TODO: add checks so no injects
 // TODO: add middleware to verify user
 // TODO: mutex or check for changes??? prevent race conditions
@@ -123,7 +113,9 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 });
 app.post("/joinGame", authenticateSession, async (req, res) => {
 	let gameDataDoc = await firestore.doc("games", req.body.gameId);
-	let gameData = await gameDataDoc.get().data();
+	let gameDataSnapshot = await gameDataDoc.get();
+	let gameData = gameDataSnapshot.data();
+	let oldGameData = gameDataSnapshot.data();
 	if (gameData.currentRound != 0) {
 		return res.status(409).send("Game already started.");
 	}
@@ -141,6 +133,9 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 		),
 		seeds: {},
 	};
+	if ((await gameDataDoc.get()).data() != oldGameData) {
+		return res.status(503).send("Please try again.");
+	} 
 	gameDataDoc.update(gameData);
 	return res.status(200).send("Game joined.");
 });
