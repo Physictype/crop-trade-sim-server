@@ -6,9 +6,6 @@ import dotenv from "dotenv";
 import { admin } from "./firebase.js";
 import cors from "cors";
 import { isEqual } from "lodash";
-
-// TODO: install lodash, npm i --save lodash
-// TODO; check for overwrites with object equal
 // import { getDoc } from "firebase";
 
 dotenv.config();
@@ -133,13 +130,13 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 		),
 		seeds: {},
 	};
-	if ((await gameDataDoc.get()).data() != oldGameData) {
+	if (!isEqual((await gameDataDoc.get()).data(), oldGameData)) {
 		return res.status(503).send("Please try again.");
-	} 
+	}
 	gameDataDoc.update(gameData);
 	return res.status(200).send("Game joined.");
 });
-
+// TODO: FIX THIS FUNCTION BC ITS RLY JANKY
 async function startGameUpdateInterval(gameId) {
 	let gameDataDoc = await firestore.doc("games", req.body.gameId);
 	let gameData = await gameDataDoc.get().data();
@@ -214,15 +211,15 @@ app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 			.status(403)
 			.send("You may only do this during the offering phase.");
 	}
-	let playerDataDoc = await firestore
-		.doc(
-			"games",
-			req.body.gameId.toString(),
-			"players",
-			req.user.uid.toString()
-		)
-		.get();
-	let playerData = playerDataDoc.data();
+	let playerDataDoc = await firestore.doc(
+		"games",
+		req.body.gameId.toString(),
+		"players",
+		req.user.uid.toString()
+	);
+	let playerDataSnapshot = await playerDataDoc.get();
+	let playerData = playerDataSnapshot.data();
+	let oldPlayerData = playerDataSnapshot.data();
 	playerData.offers[req.body.crop] = {
 		num: parseInt(req.body.num),
 		pricePer: parseInt(req.body.price),
@@ -236,6 +233,9 @@ app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 		return res
 			.status(403)
 			.send("You are trying to offer more crops than you have.");
+	}
+	if (!isEqual(await playerDataDoc.get().data(), oldPlayerData)) {
+		return res.status(503).send("Please try again.");
 	}
 	playerDataDoc.update(playerData);
 	return res.status(200).send("Crop offered.");
@@ -255,24 +255,24 @@ app.post(
 		if (req.user.uid == req.body.targetId) {
 			return res.status(403).send("You cannot trade with yourself."); // ?
 		}
-		let playerDataDoc = await firestore
-			.doc(
-				"games",
-				req.body.gameId.toString(),
-				"players",
-				req.user.uid.toString()
-			)
-			.get();
-		let otherDataDoc = await firestore
-			.doc(
-				"games",
-				req.body.gameId.toString(),
-				"players",
-				req.body.targetId.toString()
-			)
-			.get();
-		let playerData = playerDataDoc.data();
-		let otherData = otherDataDoc.data();
+		let playerDataDoc = await firestore.doc(
+			"games",
+			req.body.gameId.toString(),
+			"players",
+			req.user.uid.toString()
+		);
+		let playerDataSnapshot = await playerDataDoc.get();
+		let otherDataDoc = await firestore.doc(
+			"games",
+			req.body.gameId.toString(),
+			"players",
+			req.body.targetId.toString()
+		);
+		let otherDataSnapshot = await otherDataDoc.get();
+		let playerData = playerDataSnapshot.data();
+		let oldPlayerData = playerDataSnapshot.data();
+		let otherData = otherDataSnapshot.data();
+		let oldOtherData = otherDataSnapshot.data();
 		if (
 			playerData.money <
 			req.body.num * otherData.offers[req.body.type].pricePer
@@ -294,6 +294,14 @@ app.post(
 		playerData.crops[req.body.type] += req.body.num;
 		otherData.crops[req.body.type] -= req.body.num;
 		otherData.offers[req.body.type].num -= req.body.num;
+		if (
+			!(
+				isEqual(await playerDataDoc.get().data(), oldPlayerData) &&
+				isEqual(await otherDataDoc.get().dat(), oldOtherData)
+			)
+		) {
+			res.status(503).send("Please try again.");
+		}
 		playerDataDoc.update(playerData);
 		otherDataDoc.update(otherData);
 		return res.status(200).send("Trade completed.");
@@ -314,8 +322,9 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 			"players",
 			req.user.uid.toString()
 		)
-		.get();
-	let playerData = playerDataDoc.data();
+	let playerDataSnapshot = await playerDataDoc.get();
+	let playerData = playerDataSnapshot.data();
+	let oldPlayerData = playerDataSnapshot.data();
 
 	let cropsList = (
 		await (await firestore.doc("games", req.body.gameId.toString())).get()
@@ -337,6 +346,9 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 	playerData.seeds[req.body.seed]--;
 	playerData.plot[req.body.idx].stage = 0;
 	playerData.plot[req.body.idx].type = req.body.seed;
+	if (!isEqual(await playerDataDoc.get().data(),oldPlayerData)) {
+		return res.status(503).send("Please try again.");
+	}
 	playerDataDoc.update(playerData);
 	return res.status(200).send("Seed planted.");
 });
@@ -358,9 +370,10 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 			req.body.gameId.toString(),
 			"players",
 			req.user.uid.toString()
-		)
-		.get();
-	let playerData = playerDataDoc.data();
+		);
+	let playerDataSnapshot = await playerDataDoc.get();
+	let playerData = playerDataSnapshot.data();
+	let oldPlayerData = playerDataSnapshot.data();
 
 	if (seedCosts[req.body.seed] * req.body.count > playerData.money) {
 		return res.status(422).send("Insufficient Currency");
@@ -371,6 +384,9 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 		playerData.seeds[req.body.seed] += req.body.count;
 	} else {
 		playerData.seeds[req.body.seed] = req.body.count;
+	}
+	if (!isEqual((await playerDataDoc.get()).data(),oldPlayerData)) {
+		return res.status(503).send("Please try again.");
 	}
 	playerDataDoc.update(playerData);
 	return res.status(200).send("Seed bought.");
