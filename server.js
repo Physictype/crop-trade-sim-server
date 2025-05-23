@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import { admin } from "./firebase.js";
 import { doc, updateDoc } from "firebase/firestore";
 import cors from "cors";
-import { isEqual } from "lodash";
+import _ from "lodash";
 // import { getDoc } from "firebase";
 
 dotenv.config();
@@ -131,7 +131,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 		),
 		seeds: {},
 	};
-	if (!isEqual((await gameDataDoc.get()).data(), oldGameData)) {
+	if (!_.isEqual((await gameDataDoc.get()).data(), oldGameData)) {
 		return res.status(503).send("Please try again.");
 	}
 	gameDataDoc.update(gameData);
@@ -233,7 +233,7 @@ app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 			.status(403)
 			.send("You are trying to offer more crops than you have.");
 	}
-	if (!isEqual(await playerDataDoc.get().data(), oldPlayerData)) {
+	if (!_.isEqual(await playerDataDoc.get().data(), oldPlayerData)) {
 		return res.status(503).send("Please try again.");
 	}
 	playerDataDoc.update(playerData);
@@ -298,8 +298,8 @@ app.post(
 		otherData.offers[req.body.type].num -= req.body.num;
 		if (
 			!(
-				isEqual(await playerDataDoc.get().data(), oldPlayerData) &&
-				isEqual(await otherDataDoc.get().dat(), oldOtherData)
+				_.isEqual(await playerDataDoc.get().data(), oldPlayerData) &&
+				_.isEqual(await otherDataDoc.get().dat(), oldOtherData)
 			)
 		) {
 			res.status(503).send("Please try again.");
@@ -350,7 +350,7 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 	playerData.seeds[req.body.seed]--;
 	playerData.plot[req.body.idx].stage = 0;
 	playerData.plot[req.body.idx].type = req.body.seed;
-	if (!isEqual(await playerDataDoc.get().data(), oldPlayerData)) {
+	if (!_.isEqual(await playerDataDoc.get().data(), oldPlayerData)) {
 		return res.status(503).send("Please try again.");
 	}
 	playerDataDoc.update(playerData);
@@ -391,7 +391,7 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 	} else {
 		playerData.seeds[req.body.seed] = req.body.count;
 	}
-	if (!isEqual((await playerDataDoc.get()).data(), oldPlayerData)) {
+	if (!_.isEqual((await playerDataDoc.get()).data(), oldPlayerData)) {
 		return res.status(503).send("Please try again.");
 	}
 	playerDataDoc.update(playerData);
