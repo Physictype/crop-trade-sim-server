@@ -4,6 +4,7 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { admin } from "./firebase.js";
+import { doc, updateDoc } from "firebase/firestore";
 import cors from "cors";
 import { isEqual } from "lodash";
 // import { getDoc } from "firebase";
@@ -55,7 +56,7 @@ function authenticateSession(req, res, next) {
 		.catch(() => res.status(401).send("Unauthorized"));
 }
 async function checkInGame(req, res, next) {
-	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameDataDoc = firestore.doc("games", req.body.gameId);
 	let gameData = await gameDataDoc.get().data();
 	if (req.user.uid in gameData.players) {
 		next();
@@ -109,7 +110,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 	}
 });
 app.post("/joinGame", authenticateSession, async (req, res) => {
-	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameDataDoc = firestore.doc("games", req.body.gameId);
 	let gameDataSnapshot = await gameDataDoc.get();
 	let gameData = gameDataSnapshot.data();
 	let oldGameData = gameDataSnapshot.data();
@@ -137,57 +138,51 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 	return res.status(200).send("Game joined.");
 });
 // TODO: FIX THIS FUNCTION BC ITS RLY JANKY
-async function startGameUpdateInterval(gameId) {
-	let gameDataDoc = await firestore.doc("games", req.body.gameId);
-	let gameData = await gameDataDoc.get().data();
-	gameData.currentRound = 1;
-	let currentTimeLeft = gameData.plantingTime;
-	gameDataDoc.update(gameData);
-	let interval = setInterval(async function () {
-		currentTimeLeft--;
-		if (currentTimeLeft == 0) {
-			let gameData = await gameDataDoc.get().data();
-			if (gameData.roundSection == "planting") {
-				gameData.roundSection = "offering";
-				Object.entries(gameData.players).forEach(
-					([playerId, player]) => {
-						player.plot.forEach((crop) => {
-							if (crop.type != "") {
-								crop.stage++;
-								if (
-									crop.stage >=
-										gameData.cropsList[crop.type]
-											.minSeasons &&
-									gameData.cropsList[crop.type].seasonsMap &
-										(1 << gameData.season > 0)
-								) {
-									if (crop.type in player.crops) {
-										player.crops[crop.type]++;
-									} else {
-										player.crops[crop.type] = 1;
-									}
-									crop.type = "";
-									crop.stage = 0;
-								}
-							}
-						});
+function nextSeason(gameData) {
+	gameData.roundSection = "offering";
+	Object.entries(gameData.players).forEach(([playerId, player]) => {
+		player.plot.forEach((crop) => {
+			if (crop.type != "") {
+				crop.stage++;
+				if (
+					crop.stage >= gameData.cropsList[crop.type].minSeasons &&
+					gameData.cropsList[crop.type].seasonsMap &
+						(1 << gameData.season > 0)
+				) {
+					if (crop.type in player.crops) {
+						player.crops[crop.type]++;
+					} else {
+						player.crops[crop.type] = 1;
 					}
-				);
-				gameData.season++;
-				currentTimeLeft = gameData.offeringTime;
-			} else if (gameData.roundSection == "offering") {
-				currentTimeLeft = gameData.tradingTime;
-			} else {
-				gameData.roundSection = "planting";
-				gameData.currentRound++;
-				// trading code here:
-				if (gameData.currentRound > gameData.numRounds) {
-					clearInterval(interval);
+					crop.type = "";
+					crop.stage = 0;
 				}
 			}
-			gameDataDoc.update(gameData);
-		}
-	}, 1000);
+		});
+	});
+	gameData.season++;
+	currentTimeLeft = gameData.offeringTime;
+	return gameData;
+}
+async function roundLoop(gameDataDoc) {
+	var gameData = await gameDataDoc.get().data();
+	if (gameData.currentRound >= gameData.numRounds) {
+		return;
+	}
+	await updateDoc(gameDataDoc, {
+		currentRound: gameData.currentRound + 1,
+	});
+	setTimeout(async function () {
+		await updateDoc(gameDataDoc, { roundSection: "offering" });
+		gameDataDoc.update(nextSeason(await gameDataDoc.get().data()));
+		setTimeout(async function () {
+			await updateDoc(gameDataDoc, { roundSection: "trading" });
+			setTimeout(async function () {
+				await updateDoc(gameDataDoc, { roundSection: "planting" });
+				roundLoop();
+			}, gameData.tradingTime * 1000);
+		}, gameData.offeringTime * 1000);
+	}, gameData.plantingTime * 1000);
 }
 app.post("/startGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid) || true) {
@@ -196,7 +191,8 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		if (gameData.currentRound > 0) {
 			return res.status(409).send("Game already started.");
 		} else {
-			startGameUpdateInterval(req.body.gameId);
+			let gameDataDoc = await firestore.doc("games", req.body.gameId);
+			roundLoop(gameDataDoc);
 			return res.status(200).send("Game started.");
 		}
 	} else {
@@ -204,14 +200,17 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 	}
 });
 app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
-	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameDataDoc = firestore.doc("games", req.body.gameId);
 	let gameData = await gameDataDoc.get().data();
+	if (gameData.currentRound > gameData.numRounds) {
+		return res.status(403).send("The game has ended.");
+	}
 	if (gameData.currentStage != "offering") {
 		return res
 			.status(403)
 			.send("You may only do this during the offering phase.");
 	}
-	let playerDataDoc = await firestore.doc(
+	let playerDataDoc = firestore.doc(
 		"games",
 		req.body.gameId.toString(),
 		"players",
@@ -245,8 +244,11 @@ app.post(
 	authenticateSession,
 	checkInGame,
 	async (req, res) => {
-		let gameDataDoc = await firestore.doc("games", req.body.gameId);
+		let gameDataDoc = firestore.doc("games", req.body.gameId);
 		let gameData = await gameDataDoc.get().data();
+		if (gameData.currentRound > gameData.numRounds) {
+			return res.status(403).send("The game has ended.");
+		}
 		if (gameData.currentStage != "trading") {
 			return res
 				.status(403)
@@ -262,7 +264,7 @@ app.post(
 			req.user.uid.toString()
 		);
 		let playerDataSnapshot = await playerDataDoc.get();
-		let otherDataDoc = await firestore.doc(
+		let otherDataDoc = firestore.doc(
 			"games",
 			req.body.gameId.toString(),
 			"players",
@@ -308,26 +310,28 @@ app.post(
 	}
 );
 app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
-	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameDataDoc = firestore.doc("games", req.body.gameId);
 	let gameData = await gameDataDoc.get().data();
+	if (gameData.currentRound > gameData.numRounds) {
+		return res.status(403).send("The game has ended.");
+	}
 	if (gameData.currentStage != "planting") {
 		return res
 			.status(403)
 			.send("You may only do this during the planting phase.");
 	}
-	let playerDataDoc = await firestore
-		.doc(
-			"games",
-			req.body.gameId.toString(),
-			"players",
-			req.user.uid.toString()
-		)
+	let playerDataDoc = firestore.doc(
+		"games",
+		req.body.gameId.toString(),
+		"players",
+		req.user.uid.toString()
+	);
 	let playerDataSnapshot = await playerDataDoc.get();
 	let playerData = playerDataSnapshot.data();
 	let oldPlayerData = playerDataSnapshot.data();
 
 	let cropsList = (
-		await (await firestore.doc("games", req.body.gameId.toString())).get()
+		await firestore.doc("games", req.body.gameId.toString()).get()
 	).data().cropsList;
 
 	if (
@@ -346,7 +350,7 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 	playerData.seeds[req.body.seed]--;
 	playerData.plot[req.body.idx].stage = 0;
 	playerData.plot[req.body.idx].type = req.body.seed;
-	if (!isEqual(await playerDataDoc.get().data(),oldPlayerData)) {
+	if (!isEqual(await playerDataDoc.get().data(), oldPlayerData)) {
 		return res.status(503).send("Please try again.");
 	}
 	playerDataDoc.update(playerData);
@@ -354,8 +358,11 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 });
 
 app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
-	let gameDataDoc = await firestore.doc("games", req.body.gameId);
+	let gameDataDoc = firestore.doc("games", req.body.gameId);
 	let gameData = await gameDataDoc.get().data();
+	if (gameData.currentRound > gameData.numRounds) {
+		return res.status(403).send("The game has ended.");
+	}
 	if (gameData.currentStage != "planting") {
 		return res
 			.status(403)
@@ -364,13 +371,12 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 	let seedCosts = (
 		await firestore.doc("games", req.body.gameId.toString()).get()
 	).data().seedCosts;
-	let playerDataDoc = await firestore
-		.doc(
-			"games",
-			req.body.gameId.toString(),
-			"players",
-			req.user.uid.toString()
-		);
+	let playerDataDoc = firestore.doc(
+		"games",
+		req.body.gameId.toString(),
+		"players",
+		req.user.uid.toString()
+	);
 	let playerDataSnapshot = await playerDataDoc.get();
 	let playerData = playerDataSnapshot.data();
 	let oldPlayerData = playerDataSnapshot.data();
@@ -385,7 +391,7 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 	} else {
 		playerData.seeds[req.body.seed] = req.body.count;
 	}
-	if (!isEqual((await playerDataDoc.get()).data(),oldPlayerData)) {
+	if (!isEqual((await playerDataDoc.get()).data(), oldPlayerData)) {
 		return res.status(503).send("Please try again.");
 	}
 	playerDataDoc.update(playerData);
