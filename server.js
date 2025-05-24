@@ -139,34 +139,40 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 		),
 		seeds: {},
 	});
-	if (!_.isEqual((await gameDataDoc.get()).data(), oldGameData)) {
-		return res.status(503).send("Please try again.");
-	}
-	gameDataDoc.update(gameData);
 	return res.status(200).send("Game joined.");
 });
 // TODO: FIX THIS FUNCTION BC ITS RLY JANKY
-function nextSeason(gameData) {
-	gameData.roundSection = "offering";
-	Object.entries(gameData.players).forEach(([playerId, player]) => {
-		player.plot.forEach((crop) => {
-			if (crop.type != "") {
-				crop.stage++;
-				if (
-					crop.stage >= gameData.cropsList[crop.type].minSeasons &&
-					gameData.cropsList[crop.type].seasonsMap &
-						(1 << gameData.season > 0)
-				) {
-					if (crop.type in player.crops) {
-						player.crops[crop.type]++;
-					} else {
-						player.crops[crop.type] = 1;
-					}
-					crop.type = "";
-					crop.stage = 0;
-				}
-			}
-		});
+async function nextSeason() {
+    let players = await getDocs(
+		collection("games", req.body.gameId, "players")
+	).docs
+	players.forEach(async (doc) => {
+        while (true) {
+            let playerSnapshot = await doc.get()
+            let player = playerSnapshot.data();
+            let oldPlayer = playerSnapshot.data();
+            player.plot.forEach((crop) => {
+                if (crop.type != "") {
+                    crop.stage++;
+                    if (
+                        crop.stage >= gameData.cropsList[crop.type].minSeasons &&
+                        gameData.cropsList[crop.type].seasonsMap &
+                            (1 << gameData.season > 0)
+                    ) {
+                        if (crop.type in player.crops) {
+                            player.crops[crop.type]++;
+                        } else {
+                            player.crops[crop.type] = 1;
+                        }
+                        crop.type = "";
+                        crop.stage = 0;
+                    }
+                }
+            });
+            if (_.isEqual(await player.get().data(),oldPlayer)) {
+                await doc.update(player);
+            }
+        }
 	});
 	gameData.season++;
 	currentTimeLeft = gameData.offeringTime;
@@ -182,7 +188,7 @@ async function roundLoop(gameDataDoc) {
 	});
 	setTimeout(async function () {
 		await updateDoc(gameDataDoc, { roundSection: "offering" });
-		gameDataDoc.update(nextSeason(await gameDataDoc.get().data()));
+		nextSeason();
 		setTimeout(async function () {
 			await updateDoc(gameDataDoc, { roundSection: "trading" });
 			setTimeout(async function () {
