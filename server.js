@@ -4,7 +4,7 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { admin } from "./firebase.js";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, collection, updateDoc, getDocs } from "firebase/firestore";
 import cors from "cors";
 import _ from "lodash";
 // import { getDoc } from "firebase";
@@ -56,9 +56,10 @@ function authenticateSession(req, res, next) {
 		.catch(() => res.status(401).send("Unauthorized"));
 }
 async function checkInGame(req, res, next) {
-	let gameDataDoc = firestore.doc("games", req.body.gameId);
-	let gameData = await gameDataDoc.get().data();
-	if (req.user.uid in gameData.players) {
+	let players = await getDocs(
+		collection("games", req.body.gameId, "players")
+	).docs.map((doc) => doc.id);
+	if (players.includes(req.user.uid)) {
 		next();
 	} else {
 		return res.status(403).send("You are not in this game.");
@@ -73,7 +74,6 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid) || true) {
 		// TODO: remove || true
 		let gameData = {
-			players: [],
 			cropsList: req.body.cropsList,
 			currentRound: 0,
 			numRounds: req.body.numRounds,
@@ -113,14 +113,22 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 	let gameDataDoc = firestore.doc("games", req.body.gameId);
 	let gameDataSnapshot = await gameDataDoc.get();
 	let gameData = gameDataSnapshot.data();
-	let oldGameData = gameDataSnapshot.data();
+	let playerRef = firestore.doc(
+		"games",
+		req.body.gameId,
+		"players",
+		req.user.uid
+	);
 	if (gameData.currentRound != 0) {
 		return res.status(409).send("Game already started.");
 	}
-	if (req.user.uid in gameData.players) {
+    let players = await getDocs(
+		collection("games", req.body.gameId, "players")
+	).docs.map((doc) => doc.id);
+	if (req.user.uid in players) {
 		return res.status(409).send("You have already joined the game.");
 	}
-	gameData.players[req.user.uid] = {
+	await setDoc(playerRef, {
 		crops: {},
 		money: gameData.initialMoney,
 		plot: Array.from(
@@ -130,7 +138,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 			}
 		),
 		seeds: {},
-	};
+	});
 	if (!_.isEqual((await gameDataDoc.get()).data(), oldGameData)) {
 		return res.status(503).send("Please try again.");
 	}
