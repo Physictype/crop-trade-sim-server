@@ -3,7 +3,12 @@ import fs from "fs";
 import express from "express";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
-import { admin } from "./firebase.js";
+import firebaseAdmin from "firebase-admin";
+import serviceAccount from "./serviceAccountKey.json" with { type: "json" };
+
+export const admin = firebaseAdmin.initializeApp({
+	credential: firebaseAdmin.credential.cert(serviceAccount),
+});
 import { doc, collection, updateDoc, getDocs } from "firebase/firestore";
 import cors from "cors";
 import _ from "lodash";
@@ -11,12 +16,24 @@ import _ from "lodash";
 
 dotenv.config();
 
-const privateKey = fs.readFileSync("decrypted-private-key.pem", "utf8");
-const certificate = fs.readFileSync("certificate.pem", "utf8");
-if (!privateKey || !certificate) {
-	throw new Error("SSL certificate or private key not found.");
+// const privateKey = fs.readFileSync("decrypted-private-key.pem", "utf8");
+// const certificate = fs.readFileSync("certificate.pem", "utf8");
+// if (!privateKey || !certificate) {
+// 	throw new Error("SSL certificate or private key not found.");
+// }
+// const credentials = { key: privateKey, cert: certificate };
+function getRef(firestore, ...pathParts) {
+  let ref = firestore;
+
+  for (let i = 0; i < pathParts.length; i++) {
+    ref = (i % 2 === 0)
+      ? ref.collection(pathParts[i])
+      : ref.doc(pathParts[i]);
+  }
+  return ref;
+
+  return ref;
 }
-const credentials = { key: privateKey, cert: certificate };
 
 const app = express();
 app.use(express.json());
@@ -32,6 +49,12 @@ const corsOptions = {
 	origin: "http://localhost:5173", // Allow requests from your frontend
 	methods: ["GET", "POST", "PUT", "DELETE"],
 };
+app.use(
+	cors({
+		origin: "http://localhost:5173", // exact frontend origin here
+		credentials: true, // allow cookies/auth credentials
+	})
+);
 
 app.use(cors(corsOptions));
 
@@ -122,7 +145,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 	if (gameData.currentRound != 0) {
 		return res.status(409).send("Game already started.");
 	}
-    let players = await getDocs(
+	let players = await getDocs(
 		collection("games", req.body.gameId, "players")
 	).docs.map((doc) => doc.id);
 	if (req.user.uid in players) {
@@ -143,36 +166,36 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 });
 // TODO: FIX THIS FUNCTION BC ITS RLY JANKY
 async function nextSeason() {
-    let players = await getDocs(
-		collection("games", req.body.gameId, "players")
-	).docs
+	let players = await getDocs(collection("games", req.body.gameId, "players"))
+		.docs;
 	players.forEach(async (doc) => {
-        while (true) {
-            let playerSnapshot = await doc.get()
-            let player = playerSnapshot.data();
-            let oldPlayer = playerSnapshot.data();
-            player.plot.forEach((crop) => {
-                if (crop.type != "") {
-                    crop.stage++;
-                    if (
-                        crop.stage >= gameData.cropsList[crop.type].minSeasons &&
-                        gameData.cropsList[crop.type].seasonsMap &
-                            (1 << gameData.season > 0)
-                    ) {
-                        if (crop.type in player.crops) {
-                            player.crops[crop.type]++;
-                        } else {
-                            player.crops[crop.type] = 1;
-                        }
-                        crop.type = "";
-                        crop.stage = 0;
-                    }
-                }
-            });
-            if (_.isEqual(await player.get().data(),oldPlayer)) {
-                await doc.update(player);
-            }
-        }
+		while (true) {
+			let playerSnapshot = await doc.get();
+			let player = playerSnapshot.data();
+			let oldPlayer = playerSnapshot.data();
+			player.plot.forEach((crop) => {
+				if (crop.type != "") {
+					crop.stage++;
+					if (
+						crop.stage >=
+							gameData.cropsList[crop.type].minSeasons &&
+						gameData.cropsList[crop.type].seasonsMap &
+							(1 << gameData.season > 0)
+					) {
+						if (crop.type in player.crops) {
+							player.crops[crop.type]++;
+						} else {
+							player.crops[crop.type] = 1;
+						}
+						crop.type = "";
+						crop.stage = 0;
+					}
+				}
+			});
+			if (_.isEqual(await player.get().data(), oldPlayer)) {
+				await doc.update(player);
+			}
+		}
 	});
 	gameData.season++;
 	currentTimeLeft = gameData.offeringTime;
@@ -219,7 +242,7 @@ app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 	if (gameData.currentRound > gameData.numRounds) {
 		return res.status(403).send("The game has ended.");
 	}
-	if (gameData.currentStage != "offering") {
+	if (gameData.roundSection != "offering") {
 		return res
 			.status(403)
 			.send("You may only do this during the offering phase.");
@@ -263,7 +286,7 @@ app.post(
 		if (gameData.currentRound > gameData.numRounds) {
 			return res.status(403).send("The game has ended.");
 		}
-		if (gameData.currentStage != "trading") {
+		if (gameData.roundSection != "trading") {
 			return res
 				.status(403)
 				.send("You may only do this during the trading phase.");
@@ -323,52 +346,53 @@ app.post(
 		return res.status(200).send("Trade completed.");
 	}
 );
-app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
-	let gameDataDoc = firestore.doc("games", req.body.gameId);
-	let gameData = await gameDataDoc.get().data();
-	if (gameData.currentRound > gameData.numRounds) {
-		return res.status(403).send("The game has ended.");
-	}
-	if (gameData.currentStage != "planting") {
-		return res
-			.status(403)
-			.send("You may only do this during the planting phase.");
-	}
-	let playerDataDoc = firestore.doc(
-		"games",
-		req.body.gameId.toString(),
-		"players",
-		req.user.uid.toString()
-	);
-	let playerDataSnapshot = await playerDataDoc.get();
-	let playerData = playerDataSnapshot.data();
-	let oldPlayerData = playerDataSnapshot.data();
+app.post("/plantSeed", async (req, res) => {
+    console.log("hi")
+	// authenticateSession, checkInGame, TODO: YOU BETTER REMEMBER TO ADD THIS BACK
+	req.user = { uid: req.body.userId };
+    try {
+        await firestore.runTransaction(async (transaction) => {
+            let gameDataDoc = getRef(firestore,"games", req.body.gameId);
+            let playerDataDoc = getRef(firestore,
+                "games",
+                req.body.gameId.toString(),
+                "players",
+                req.user.uid.toString()
+            );
+            let [gameDataSnap,playerDataSnap] = await Promise.all([transaction.get(gameDataDoc),transaction.get(playerDataDoc)]);
+            
+            let gameData = gameDataSnap.data();
+            let playerData = playerDataSnap.data();
+            if (gameData.currentRound > gameData.numRounds) {
+                throw new Error("The game has ended.");
+            }
+            if (gameData.roundSection != "planting") {
+                throw new Error("You may only do this during the planting phase.");
+            }
 
-	let cropsList = (
-		await firestore.doc("games", req.body.gameId.toString()).get()
-	).data().cropsList;
-
-	if (
-		!(req.body.seed in playerData.seeds) ||
-		playerData.seeds[req.body.seed] < 1
-	) {
-		return res.status(422).send("Insufficient Seeds");
-	}
-	if (!cropsList.includes(req.body.seed)) {
-		return res.status(422).send("That crop is not in play.");
-	}
-	if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
-		return res.status(422).send("Planting out of range.");
-	}
-
-	playerData.seeds[req.body.seed]--;
-	playerData.plot[req.body.idx].stage = 0;
-	playerData.plot[req.body.idx].type = req.body.seed;
-	if (!_.isEqual(await playerDataDoc.get().data(), oldPlayerData)) {
-		return res.status(503).send("Please try again.");
-	}
-	playerDataDoc.update(playerData);
-	return res.status(200).send("Seed planted.");
+            if (
+                !(req.body.seed in playerData.seeds) ||
+                playerData.seeds[req.body.seed] < 1
+            ) {
+                throw new Error("Insufficient Seeds.");
+            }
+            if (!gameData.cropsList.map(crop => crop.name).includes(req.body.seed)) {
+                throw new Error("That crop isn't in play.");
+            }
+            if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
+                throw new Error("Planting out of range.");
+            }
+            transaction.update(playerDataDoc, {
+                [`seeds.${req.body.seed}`]: playerData.seeds[req.body.seed] - 1,
+                [`plot.${req.body.idx}.stage`]: 0,
+                [`plot.${req.body.idx}.type`]: req.body.seed,
+            });
+        })
+        console.log("hi")
+        return res.status(200).send("Seed planted.");
+    } catch (e) {
+        return res.status(409).send(e.message || "Conflict. Please try again.");
+    }
 });
 
 app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
@@ -377,7 +401,7 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 	if (gameData.currentRound > gameData.numRounds) {
 		return res.status(403).send("The game has ended.");
 	}
-	if (gameData.currentStage != "planting") {
+	if (gameData.roundSection != "planting") {
 		return res
 			.status(403)
 			.send("You may only do this during the planting phase.");
@@ -413,6 +437,6 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-https.createServer(credentials, app).listen(PORT, () => {
+app.listen(PORT, () => {
 	console.log(`Server running on https://localhost:${PORT}`);
 });
