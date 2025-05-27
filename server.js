@@ -23,16 +23,22 @@ dotenv.config();
 // }
 // const credentials = { key: privateKey, cert: certificate };
 function getRef(firestore, ...pathParts) {
-  let ref = firestore;
+	let ref = firestore;
 
-  for (let i = 0; i < pathParts.length; i++) {
-    ref = (i % 2 === 0)
-      ? ref.collection(pathParts[i])
-      : ref.doc(pathParts[i]);
-  }
-  return ref;
+	for (let i = 0; i < pathParts.length; i++) {
+		ref =
+			i % 2 === 0 ? ref.collection(pathParts[i]) : ref.doc(pathParts[i]);
+	}
+	return ref;
 
-  return ref;
+	return ref;
+}
+
+function uto0(x) {
+	if (x == null) {
+		return 0;
+	}
+	return x;
 }
 
 const app = express();
@@ -133,46 +139,53 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 	}
 });
 app.post("/joinGame", authenticateSession, async (req, res) => {
-	let gameDataDoc = firestore.doc("games", req.body.gameId);
-	let gameDataSnapshot = await gameDataDoc.get();
-	let gameData = gameDataSnapshot.data();
-	let playerRef = firestore.doc(
-		"games",
-		req.body.gameId,
-		"players",
-		req.user.uid
-	);
-	if (gameData.currentRound != 0) {
-		return res.status(409).send("Game already started.");
-	}
-	let players = await getDocs(
-		collection("games", req.body.gameId, "players")
-	).docs.map((doc) => doc.id);
-	if (req.user.uid in players) {
-		return res.status(409).send("You have already joined the game.");
-	}
-	await setDoc(playerRef, {
-		crops: {},
-		money: gameData.initialMoney,
-		plot: Array.from(
-			Array(gameData.plotWidth * gameData.plotHeight),
-			(x) => {
-				return { type: "", stage: 0 };
+	try {
+		firebase.runTransaction(async (transaction) => {
+			let gameDataDoc = firestore.doc("games", req.body.gameId);
+			let playerRef = firestore.doc(
+				"games",
+				req.body.gameId,
+				"players",
+				req.user.uid
+			);
+			let playersRef = firestore.collection(
+				"games",
+				req.body.gameId,
+				"players"
+			);
+			let [gameDataSnapshot, playersSnapshot] = await Promise.all([
+				transaction.get(gameDataDoc),
+				transaction.getDocs(playersRef),
+			]);
+			let gameData = gameDataSnapshot.data();
+			if (gameData.currentRound != 0) {
+				throw new Error("Game already started.");
 			}
-		),
-		seeds: {},
-	});
-	return res.status(200).send("Game joined.");
+			let players = playersSnapshot.docs.map((doc) => doc.id);
+			if (req.user.uid in players) {
+				throw new Error("You have already joined the game.");
+			}
+			await transaction.setDoc(playerRef, {
+				crops: {},
+				money: gameData.initialMoney,
+				plot: {},
+				seeds: {},
+			});
+		});
+		return res.status(200).send("Game joined.");
+	} catch (e) {
+		return res.status(409).send(e.message || "Conflict. Please try again.");
+	}
 });
 // TODO: FIX THIS FUNCTION BC ITS RLY JANKY
-async function nextSeason() {
-	let players = await getDocs(collection("games", req.body.gameId, "players"))
-		.docs;
-	players.forEach(async (doc) => {
-		while (true) {
-			let playerSnapshot = await doc.get();
+async function nextSeason(gameDataDoc, season) {
+	await firebase.runTransaction(async (transaction) => {
+		let players = await getDocs(
+			collection("games", req.body.gameId, "players")
+		).docs;
+		players.forEach(async (doc) => {
+			let playerSnapshot = await transaction.get(doc);
 			let player = playerSnapshot.data();
-			let oldPlayer = playerSnapshot.data();
 			player.plot.forEach((crop) => {
 				if (crop.type != "") {
 					crop.stage++;
@@ -192,14 +205,10 @@ async function nextSeason() {
 					}
 				}
 			});
-			if (_.isEqual(await player.get().data(), oldPlayer)) {
-				await doc.update(player);
-			}
-		}
+			transaction.update(doc, player);
+		});
+		transaction.update(gameDataDoc, { season: season + 1 });
 	});
-	gameData.season++;
-	currentTimeLeft = gameData.offeringTime;
-	return gameData;
 }
 async function roundLoop(gameDataDoc) {
 	var gameData = await gameDataDoc.get().data();
@@ -211,7 +220,7 @@ async function roundLoop(gameDataDoc) {
 	});
 	setTimeout(async function () {
 		await updateDoc(gameDataDoc, { roundSection: "offering" });
-		nextSeason();
+		nextSeason(gameDataDoc, gameData.season);
 		setTimeout(async function () {
 			await updateDoc(gameDataDoc, { roundSection: "trading" });
 			setTimeout(async function () {
@@ -237,203 +246,227 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 	}
 });
 app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
-	let gameDataDoc = firestore.doc("games", req.body.gameId);
-	let gameData = await gameDataDoc.get().data();
-	if (gameData.currentRound > gameData.numRounds) {
-		return res.status(403).send("The game has ended.");
+	try {
+		await firebase.runTransaction(async (transaction) => {
+			let gameDataDoc = firestore.doc("games", req.body.gameId);
+			let playerDataDoc = firestore.doc(
+				"games",
+				req.body.gameId.toString(),
+				"players",
+				req.user.uid.toString()
+			);
+			let [gameDataSnapshot, playerDataSnapshot] = await Promise.all([
+				transaction.get(gameDataDoc),
+				transaction.get(playerDataDoc),
+			]);
+			let gameData = gameDataSnapshot.data();
+			if (gameData.currentRound > gameData.numRounds) {
+				throw new Error("The game has ended.");
+			}
+			if (gameData.roundSection != "offering") {
+				throw new Error(
+					"You may only do this during the offering phase."
+				);
+			}
+			let playerData = playerDataSnapshot.data();
+			playerData.offers[req.body.crop] = {
+				num: parseInt(req.body.num),
+				pricePer: parseInt(req.body.price),
+			};
+			if (
+				!(
+					playerData.offers[req.body.crop].num <=
+					playerData.crops[req.body.crop]
+				)
+			) {
+				throw new Error(
+					"You are trying to offer more crops than you have."
+				);
+			}
+			playerDataDoc.update(playerData);
+		});
+		return res.status(200).send("Crop offered.");
+	} catch (e) {
+		return res.status(409).send(e.message || "Conflict. Please try again.");
 	}
-	if (gameData.roundSection != "offering") {
-		return res
-			.status(403)
-			.send("You may only do this during the offering phase.");
-	}
-	let playerDataDoc = firestore.doc(
-		"games",
-		req.body.gameId.toString(),
-		"players",
-		req.user.uid.toString()
-	);
-	let playerDataSnapshot = await playerDataDoc.get();
-	let playerData = playerDataSnapshot.data();
-	let oldPlayerData = playerDataSnapshot.data();
-	playerData.offers[req.body.crop] = {
-		num: parseInt(req.body.num),
-		pricePer: parseInt(req.body.price),
-	};
-	if (
-		!(
-			playerData.offers[req.body.crop].num <=
-			playerData.crops[req.body.crop]
-		)
-	) {
-		return res
-			.status(403)
-			.send("You are trying to offer more crops than you have.");
-	}
-	if (!_.isEqual(await playerDataDoc.get().data(), oldPlayerData)) {
-		return res.status(503).send("Please try again.");
-	}
-	playerDataDoc.update(playerData);
-	return res.status(200).send("Crop offered.");
 });
 app.post(
 	"/tradeFromOffer",
 	authenticateSession,
 	checkInGame,
 	async (req, res) => {
-		let gameDataDoc = firestore.doc("games", req.body.gameId);
-		let gameData = await gameDataDoc.get().data();
-		if (gameData.currentRound > gameData.numRounds) {
-			return res.status(403).send("The game has ended.");
-		}
-		if (gameData.roundSection != "trading") {
+		try {
+			await firestore.runTransaction(async (transaction) => {
+				let gameDataDoc = firestore.doc("games", req.body.gameId);
+				let playerDataDoc = await firestore.doc(
+					"games",
+					req.body.gameId.toString(),
+					"players",
+					req.user.uid.toString()
+				);
+				let otherDataDoc = firestore.doc(
+					"games",
+					req.body.gameId.toString(),
+					"players",
+					req.body.targetId.toString()
+				);
+				let [gameDataSnapshot, playerDataSnapshot, otherDataSnapshot] =
+					await Promise.all([
+						transaction.get(gameDataDoc),
+						transaction.get(playerDataDoc),
+						transaction.get(otherDataDoc),
+					]);
+				let gameData = gameDataSnapshot.data();
+				if (gameData.currentRound > gameData.numRounds) {
+					throw new Error("The game has ended.");
+				}
+				if (gameData.roundSection != "trading") {
+					throw new Error(
+						"You may only do this during the trading phase."
+					);
+				}
+				if (req.user.uid == req.body.targetId) {
+					throw new Error("You cannot trade with yourself."); // ?
+				}
+				let playerData = playerDataSnapshot.data();
+				let otherData = otherDataSnapshot.data();
+				if (
+					playerData.money <
+					req.body.num * otherData.offers[req.body.type].pricePer
+				) {
+					throw new Error("You do not have enough money.");
+				}
+				if (req.body.num > otherData.offers[req.body.type].num) {
+					throw new Error(
+						"That is more than the other player is offering."
+					);
+				}
+				transaction.update(playerData, {
+					money:
+						money -
+						req.body.num * otherData.offers[req.body.type].pricePer,
+					[`crops.${req.body.type}`]:
+						playerData.crops[req.body.type] + req.body.num,
+				});
+				transaction.update(otherData, {
+					money:
+						money +
+						req.body.num * otherData.offers[req.body.type].pricePer,
+					[`crops.${req.body.type}`]:
+						playerData.crops[req.body.type] - req.body.num,
+					[`offers.${req.body.type}.num`]:
+						otherData.offers[req.body.type].num - req.body.num,
+				});
+			});
+			return res.status(200).send("Trade completed.");
+		} catch (e) {
 			return res
-				.status(403)
-				.send("You may only do this during the trading phase.");
+				.status(409)
+				.send(e.message || "Conflict. Please try again.");
 		}
-		if (req.user.uid == req.body.targetId) {
-			return res.status(403).send("You cannot trade with yourself."); // ?
-		}
-		let playerDataDoc = await firestore.doc(
-			"games",
-			req.body.gameId.toString(),
-			"players",
-			req.user.uid.toString()
-		);
-		let playerDataSnapshot = await playerDataDoc.get();
-		let otherDataDoc = firestore.doc(
-			"games",
-			req.body.gameId.toString(),
-			"players",
-			req.body.targetId.toString()
-		);
-		let otherDataSnapshot = await otherDataDoc.get();
-		let playerData = playerDataSnapshot.data();
-		let oldPlayerData = playerDataSnapshot.data();
-		let otherData = otherDataSnapshot.data();
-		let oldOtherData = otherDataSnapshot.data();
-		if (
-			playerData.money <
-			req.body.num * otherData.offers[req.body.type].pricePer
-		) {
-			return res.status(422).send("You do not have enough money.");
-		}
-		if (req.body.num > otherData.offers[req.body.type].num) {
-			return res
-				.status(422)
-				.send("That is more than the other player is offering.");
-		}
-		playerData.money -=
-			req.body.num * otherData.offers[req.body.type].pricePer;
-		otherData.money +=
-			req.body.num * otherData.offers[req.body.type].pricePer;
-		if (!(req.body.type in playerDataDoc.crops)) {
-			playerDataDoc.crops[req.body.type] = 0;
-		}
-		playerData.crops[req.body.type] += req.body.num;
-		otherData.crops[req.body.type] -= req.body.num;
-		otherData.offers[req.body.type].num -= req.body.num;
-		if (
-			!(
-				_.isEqual(await playerDataDoc.get().data(), oldPlayerData) &&
-				_.isEqual(await otherDataDoc.get().dat(), oldOtherData)
-			)
-		) {
-			res.status(503).send("Please try again.");
-		}
-		playerDataDoc.update(playerData);
-		otherDataDoc.update(otherData);
-		return res.status(200).send("Trade completed.");
 	}
 );
 app.post("/plantSeed", async (req, res) => {
-    console.log("hi")
+	console.log("hi");
 	// authenticateSession, checkInGame, TODO: YOU BETTER REMEMBER TO ADD THIS BACK
 	req.user = { uid: req.body.userId };
-    try {
-        await firestore.runTransaction(async (transaction) => {
-            let gameDataDoc = getRef(firestore,"games", req.body.gameId);
-            let playerDataDoc = getRef(firestore,
-                "games",
-                req.body.gameId.toString(),
-                "players",
-                req.user.uid.toString()
-            );
-            let [gameDataSnap,playerDataSnap] = await Promise.all([transaction.get(gameDataDoc),transaction.get(playerDataDoc)]);
-            
-            let gameData = gameDataSnap.data();
-            let playerData = playerDataSnap.data();
-            if (gameData.currentRound > gameData.numRounds) {
-                throw new Error("The game has ended.");
-            }
-            if (gameData.roundSection != "planting") {
-                throw new Error("You may only do this during the planting phase.");
-            }
+	try {
+		await firestore.runTransaction(async (transaction) => {
+			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
+			let playerDataDoc = getRef(
+				firestore,
+				"games",
+				req.body.gameId.toString(),
+				"players",
+				req.user.uid.toString()
+			);
+			let [gameDataSnap, playerDataSnap] = await Promise.all([
+				transaction.get(gameDataDoc),
+				transaction.get(playerDataDoc),
+			]);
 
-            if (
-                !(req.body.seed in playerData.seeds) ||
-                playerData.seeds[req.body.seed] < 1
-            ) {
-                throw new Error("Insufficient Seeds.");
-            }
-            if (!gameData.cropsList.map(crop => crop.name).includes(req.body.seed)) {
-                throw new Error("That crop isn't in play.");
-            }
-            if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
-                throw new Error("Planting out of range.");
-            }
-            transaction.update(playerDataDoc, {
-                [`seeds.${req.body.seed}`]: playerData.seeds[req.body.seed] - 1,
-                [`plot.${req.body.idx}.stage`]: 0,
-                [`plot.${req.body.idx}.type`]: req.body.seed,
-            });
-        })
-        console.log("hi")
-        return res.status(200).send("Seed planted.");
-    } catch (e) {
-        return res.status(409).send(e.message || "Conflict. Please try again.");
-    }
+			let gameData = gameDataSnap.data();
+			let playerData = playerDataSnap.data();
+			if (gameData.currentRound > gameData.numRounds) {
+				throw new Error("The game has ended.");
+			}
+			if (gameData.roundSection != "planting") {
+				throw new Error(
+					"You may only do this during the planting phase."
+				);
+			}
+
+			if (
+				!(req.body.seed in playerData.seeds) ||
+				playerData.seeds[req.body.seed] < 1
+			) {
+				throw new Error("Insufficient Seeds.");
+			}
+			if (
+				!gameData.cropsList
+					.map((crop) => crop.name)
+					.includes(req.body.seed)
+			) {
+				throw new Error("That crop isn't in play.");
+			}
+			// if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
+			// 	throw new Error("Planting out of range.");
+			// }
+			transaction.update(playerDataDoc, {
+				[`seeds.${req.body.seed}`]: playerData.seeds[req.body.seed] - 1,
+				[`plot.${req.body.idx}.stage`]: 0,
+				[`plot.${req.body.idx}.type`]: req.body.seed,
+			});
+		});
+		console.log("hi");
+		return res.status(200).send("Seed planted.");
+	} catch (e) {
+		return res.status(409).send(e.message || "Conflict. Please try again.");
+	}
 });
 
 app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
-	let gameDataDoc = firestore.doc("games", req.body.gameId);
-	let gameData = await gameDataDoc.get().data();
-	if (gameData.currentRound > gameData.numRounds) {
-		return res.status(403).send("The game has ended.");
-	}
-	if (gameData.roundSection != "planting") {
-		return res
-			.status(403)
-			.send("You may only do this during the planting phase.");
-	}
-	let seedCosts = (
-		await firestore.doc("games", req.body.gameId.toString()).get()
-	).data().seedCosts;
-	let playerDataDoc = firestore.doc(
-		"games",
-		req.body.gameId.toString(),
-		"players",
-		req.user.uid.toString()
-	);
-	let playerDataSnapshot = await playerDataDoc.get();
-	let playerData = playerDataSnapshot.data();
-	let oldPlayerData = playerDataSnapshot.data();
+	try {
+		await firestore.runTransaction(async (transaction) => {
+			let gameDataDoc = firestore.doc("games", req.body.gameId);
+			let playerDataDoc = firestore.doc(
+				"games",
+				req.body.gameId.toString(),
+				"players",
+				req.user.uid.toString()
+			);
+			let [gameDataSnapshot, playerDataSnapshot] = await Promise.all([
+				transaction.get(gameDataDoc),
+				transaction.get(playerDataDoc),
+			]);
+			let gameData = gameDataSnapshot.data();
+			let playerData = playerDataSnapshot.data();
+			if (gameData.currentRound > gameData.numRounds) {
+				throw new Error("The game has ended.");
+			}
+			if (gameData.roundSection != "planting") {
+				throw new Error(
+					"You may only do this during the planting phase."
+				);
+			}
+			let seedCosts = gameData.seedCosts;
 
-	if (seedCosts[req.body.seed] * req.body.count > playerData.money) {
-		return res.status(422).send("Insufficient Currency");
-	}
+			if (seedCosts[req.body.seed] * req.body.count > playerData.money) {
+				throw new Error("Insufficient Currency");
+			}
 
-	playerData.money -= seedCosts[req.body.seed] * req.body.count;
-	if (req.body.seed in playerData.seeds) {
-		playerData.seeds[req.body.seed] += req.body.count;
-	} else {
-		playerData.seeds[req.body.seed] = req.body.count;
+			transaction.update(playerDataDoc, {
+				money:
+					playerData.money -
+					seedCosts[req.body.seed] * req.body.count,
+				[`seeds.${req.body.seed}`]:
+					uto0(playerData.seeds[req.body.seed]) + req.body.count,
+			});
+		});
+		return res.status(200).send("Seed bought.");
+	} catch (e) {
+		return res.status(409).send(e.message || "Conflict. Please try again.");
 	}
-	if (!_.isEqual((await playerDataDoc.get()).data(), oldPlayerData)) {
-		return res.status(503).send("Please try again.");
-	}
-	playerDataDoc.update(playerData);
-	return res.status(200).send("Seed bought.");
 });
 
 const PORT = process.env.PORT || 3000;
