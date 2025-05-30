@@ -86,7 +86,7 @@ function authenticateSession(req, res, next) {
 }
 async function checkInGame(req, res, next) {
 	let players = await getDocs(
-		collection("games", req.body.gameId, "players")
+		getRef(firestore,"games", req.body.gameId, "players")
 	).docs.map((doc) => doc.id);
 	if (players.includes(req.user.uid)) {
 		next();
@@ -100,7 +100,7 @@ async function checkInGame(req, res, next) {
 // TODO: mutex or check for changes??? prevent race conditions
 let admins = [];
 app.post("/createGame", authenticateSession, async (req, res) => {
-	if (admins.includes(req.user.uid) || true) {
+	if (true || admins.includes(req.user.uid)) {
 		// TODO: remove || true
 		let gameData = {
 			cropsList: req.body.cropsList,
@@ -132,7 +132,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			}
 		}
 		let id = generateGameID();
-		await setDoc(doc(firestore, "games", id), gameData);
+		await setDoc(getRef(firestore, "games", id), gameData);
 		return res.status(200).send(id);
 	} else {
 		return res.status(401).send("Unauthorized");
@@ -140,15 +140,16 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 });
 app.post("/joinGame", authenticateSession, async (req, res) => {
 	try {
-		firebase.runTransaction(async (transaction) => {
-			let gameDataDoc = firestore.doc("games", req.body.gameId);
-			let playerRef = firestore.doc(
+		firestore.runTransaction(async (transaction) => {
+			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
+			let playerRef = getRef(
+				firestore,
 				"games",
 				req.body.gameId,
 				"players",
 				req.user.uid
 			);
-			let playersRef = firestore.collection(
+			let playersRef = getRef(firestore,
 				"games",
 				req.body.gameId,
 				"players"
@@ -178,67 +179,72 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 	}
 });
 // TODO: FIX THIS FUNCTION BC ITS RLY JANKY
-async function nextSeason(gameDataDoc, season) {
-	await firebase.runTransaction(async (transaction) => {
-		let players = await getDocs(
-			collection("games", req.body.gameId, "players")
-		).docs;
+async function nextSeason(gameDataDoc, season,gameId) {
+	await firestore.runTransaction(async (transaction) => {
+        let [gameDataSnapshot,players] = await Promise.all([transaction.get(gameDataDoc),transaction.get(getRef(firestore,"games", gameId, "players"))]);
+        let gameData = gameDataSnapshot;
 		players.forEach(async (doc) => {
-			let playerSnapshot = await transaction.get(doc);
-			let player = playerSnapshot.data();
-			player.plot.forEach((crop) => {
-				if (crop.type != "") {
-					crop.stage++;
+			let player = doc.data();
+            console.log(player)
+			Object.keys(player.plot).forEach((idx) => {
+				if (player.plot[idx].type != "") {
+					player.plot[idx].stage++;
 					if (
-						crop.stage >=
-							gameData.cropsList[crop.type].minSeasons &&
-						gameData.cropsList[crop.type].seasonsMap &
-							(1 << gameData.season > 0)
+						(player.plot[idx].stage >=
+							gameData.cropsList[player.plot[idx].type].minSeasons) &&
+						(gameData.cropsList[player.plot[idx].type].seasonsMap &
+							(1 << gameData.season > 0))
 					) {
-						if (crop.type in player.crops) {
-							player.crops[crop.type]++;
+						if (player.plot[idx].type in player.crops) {
+							player.crops[player.plot[idx].type]++;
 						} else {
-							player.crops[crop.type] = 1;
+							player.crops[player.plot[idx].type] = 1;
 						}
-						crop.type = "";
-						crop.stage = 0;
+						player.plot[idx].type = "";
+						player.plot[idx].stage = 0;
 					}
 				}
 			});
-			transaction.update(doc, player);
+            console.log("here?");
+			transaction.update(getRef(firestore,"games",gameId,"players",doc), player);
 		});
+        console.log("or here?")
 		transaction.update(gameDataDoc, { season: season + 1 });
 	});
+    console.log("or im stupid?")
 }
-async function roundLoop(gameDataDoc) {
-	var gameData = await gameDataDoc.get().data();
+async function roundLoop(gameDataDoc,gameId) {
+	var gameData = (await gameDataDoc.get()).data();
 	if (gameData.currentRound >= gameData.numRounds) {
 		return;
 	}
-	await updateDoc(gameDataDoc, {
+    console.log('hi')
+	await gameDataDoc.update({
 		currentRound: gameData.currentRound + 1,
 	});
+	console.log("loop1");
 	setTimeout(async function () {
-		await updateDoc(gameDataDoc, { roundSection: "offering" });
-		nextSeason(gameDataDoc, gameData.season);
+		await gameDataDoc.update({ roundSection: "offering" });
+		nextSeason(gameDataDoc, gameData.season, gameId);
 		setTimeout(async function () {
-			await updateDoc(gameDataDoc, { roundSection: "trading" });
+			await gameDataDoc.update( { roundSection: "trading" });
 			setTimeout(async function () {
-				await updateDoc(gameDataDoc, { roundSection: "planting" });
+				await gameDataDoc.update( { roundSection: "planting" });
 				roundLoop();
 			}, gameData.tradingTime * 1000);
 		}, gameData.offeringTime * 1000);
 	}, gameData.plantingTime * 1000);
 }
-app.post("/startGame", authenticateSession, async (req, res) => {
-	if (admins.includes(req.user.uid) || true) {
-		let gameDataDoc = await firestore.doc("games", req.body.gameId);
-		let gameData = await gameDataDoc.get().data();
+app.post("/startGame", async (req, res) => {
+	// TODO: ADD authenticateSession,
+	if (true || admins.includes(req.user.uid)) {
+		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
+		let gameData = (await gameDataDoc.get()).data();
 		if (gameData.currentRound > 0) {
+            console.log(gameData.currentRound);
 			return res.status(409).send("Game already started.");
 		} else {
-			let gameDataDoc = await firestore.doc("games", req.body.gameId);
-			roundLoop(gameDataDoc);
+			roundLoop(gameDataDoc,req.body.gameId);
 			return res.status(200).send("Game started.");
 		}
 	} else {
@@ -247,9 +253,10 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 });
 app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 	try {
-		await firebase.runTransaction(async (transaction) => {
-			let gameDataDoc = firestore.doc("games", req.body.gameId);
-			let playerDataDoc = firestore.doc(
+		await firestore.runTransaction(async (transaction) => {
+			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
+			let playerDataDoc = getRef(
+				firestore,
 				"games",
 				req.body.gameId.toString(),
 				"players",
@@ -297,14 +304,16 @@ app.post(
 	async (req, res) => {
 		try {
 			await firestore.runTransaction(async (transaction) => {
-				let gameDataDoc = firestore.doc("games", req.body.gameId);
-				let playerDataDoc = await firestore.doc(
+				let gameDataDoc = getRef(firestore, "games", req.body.gameId);
+				let playerDataDoc = await getRef(
+					firestore,
 					"games",
 					req.body.gameId.toString(),
 					"players",
 					req.user.uid.toString()
 				);
-				let otherDataDoc = firestore.doc(
+				let otherDataDoc = getRef(
+					firestore,
 					"games",
 					req.body.gameId.toString(),
 					"players",
@@ -428,8 +437,9 @@ app.post("/plantSeed", async (req, res) => {
 app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 	try {
 		await firestore.runTransaction(async (transaction) => {
-			let gameDataDoc = firestore.doc("games", req.body.gameId);
-			let playerDataDoc = firestore.doc(
+			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
+			let playerDataDoc = getRef(
+				firestore,
 				"games",
 				req.body.gameId.toString(),
 				"players",
