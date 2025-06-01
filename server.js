@@ -103,7 +103,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 	if (true || admins.includes(req.user.uid)) {
 		// TODO: remove || true
 		let gameData = {
-			cropsList: req.body.cropsList,
+			availableCrops: req.body.availableCrops,
 			currentRound: 0,
 			numRounds: req.body.numRounds,
 			plantingTime: req.body.plantingTime,
@@ -182,7 +182,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 async function nextSeason(gameDataDoc, season,gameId) {
 	await firestore.runTransaction(async (transaction) => {
         let [gameDataSnapshot,players] = await Promise.all([transaction.get(gameDataDoc),transaction.get(getRef(firestore,"games", gameId, "players"))]);
-        let gameData = gameDataSnapshot;
+        let gameData = gameDataSnapshot.data();
 		players.forEach(async (doc) => {
 			let player = doc.data();
             console.log(player)
@@ -191,8 +191,8 @@ async function nextSeason(gameDataDoc, season,gameId) {
 					player.plot[idx].stage++;
 					if (
 						(player.plot[idx].stage >=
-							gameData.cropsList[player.plot[idx].type].minSeasons) &&
-						(gameData.cropsList[player.plot[idx].type].seasonsMap &
+							gameData.availableCrops[player.plot[idx].type].minSeasons) &&
+						(gameData.availableCrops[player.plot[idx].type].seasonsMap &
 							(1 << gameData.season > 0))
 					) {
 						if (player.plot[idx].type in player.crops) {
@@ -206,10 +206,11 @@ async function nextSeason(gameDataDoc, season,gameId) {
 				}
 			});
             console.log("here?");
-			transaction.update(getRef(firestore,"games",gameId,"players",doc), player);
+			transaction.update(getRef(firestore,"games",gameId,"players",doc.id), player);
 		});
-        console.log("or here?")
-		transaction.update(gameDataDoc, { season: season + 1 });
+        console.log("or here?",doc.id)
+		transaction.update(gameDataDoc, { season: (season + 1) % 4 });
+        console.log("hey?");
 	});
     console.log("or im stupid?")
 }
@@ -230,7 +231,7 @@ async function roundLoop(gameDataDoc,gameId) {
 			await gameDataDoc.update( { roundSection: "trading" });
 			setTimeout(async function () {
 				await gameDataDoc.update( { roundSection: "planting" });
-				roundLoop();
+				roundLoop(gameDataDoc, gameId);
 			}, gameData.tradingTime * 1000);
 		}, gameData.offeringTime * 1000);
 	}, gameData.plantingTime * 1000);
@@ -244,6 +245,7 @@ app.post("/startGame", async (req, res) => {
             console.log(gameData.currentRound);
 			return res.status(409).send("Game already started.");
 		} else {
+            console.log(gameDataDoc)
 			roundLoop(gameDataDoc,req.body.gameId);
 			return res.status(200).send("Game started.");
 		}
@@ -412,8 +414,7 @@ app.post("/plantSeed", async (req, res) => {
 				throw new Error("Insufficient Seeds.");
 			}
 			if (
-				!gameData.cropsList
-					.map((crop) => crop.name)
+				!Object.keys(gameData.availableCrops)
 					.includes(req.body.seed)
 			) {
 				throw new Error("That crop isn't in play.");
