@@ -86,7 +86,7 @@ function authenticateSession(req, res, next) {
 }
 async function checkInGame(req, res, next) {
 	let players = await getDocs(
-		getRef(firestore,"games", req.body.gameId, "players")
+		getRef(firestore, "games", req.body.gameId, "players")
 	).docs.map((doc) => doc.id);
 	if (players.includes(req.user.uid)) {
 		next();
@@ -149,7 +149,8 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				"players",
 				req.user.uid
 			);
-			let playersRef = getRef(firestore,
+			let playersRef = getRef(
+				firestore,
 				"games",
 				req.body.gameId,
 				"players"
@@ -179,21 +180,26 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 	}
 });
 // TODO: FIX THIS FUNCTION BC ITS RLY JANKY
-async function nextSeason(gameDataDoc, season,gameId) {
+async function nextSeason(gameDataDoc, season, gameId) {
 	await firestore.runTransaction(async (transaction) => {
-        let [gameDataSnapshot,players] = await Promise.all([transaction.get(gameDataDoc),transaction.get(getRef(firestore,"games", gameId, "players"))]);
-        let gameData = gameDataSnapshot.data();
+		let [gameDataSnapshot, players] = await Promise.all([
+			transaction.get(gameDataDoc),
+			transaction.get(getRef(firestore, "games", gameId, "players")),
+		]);
+		let gameData = gameDataSnapshot.data();
 		players.forEach(async (doc) => {
 			let player = doc.data();
-            console.log(player)
+			console.log(player);
 			Object.keys(player.plot).forEach((idx) => {
 				if (player.plot[idx].type != "") {
 					player.plot[idx].stage++;
 					if (
-						(player.plot[idx].stage >=
-							gameData.availableCrops[player.plot[idx].type].minSeasons) &&
-						(gameData.availableCrops[player.plot[idx].type].seasonsMap &
-							(1 << gameData.season > 0))
+						player.plot[idx].stage >=
+							gameData.availableCrops[player.plot[idx].type]
+								.minSeasons &&
+						gameData.availableCrops[player.plot[idx].type]
+							.seasonsMap &
+							(1 << gameData.season > 0)
 					) {
 						if (player.plot[idx].type in player.crops) {
 							player.crops[player.plot[idx].type]++;
@@ -205,32 +211,52 @@ async function nextSeason(gameDataDoc, season,gameId) {
 					}
 				}
 			});
-            console.log("here?");
-			transaction.update(getRef(firestore,"games",gameId,"players",doc.id), player);
+			console.log("here?");
+			transaction.update(
+				getRef(firestore, "games", gameId, "players", doc.id),
+				player
+			);
 		});
-        console.log("or here?",doc.id)
+		console.log("or here?", doc.id);
 		transaction.update(gameDataDoc, { season: (season + 1) % 4 });
-        console.log("hey?");
+		console.log("hey?");
 	});
-    console.log("or im stupid?")
+	console.log("or im stupid?");
 }
-async function roundLoop(gameDataDoc,gameId) {
+async function roundLoop(gameDataDoc, gameId) {
 	var gameData = (await gameDataDoc.get()).data();
 	if (gameData.currentRound >= gameData.numRounds) {
 		return;
 	}
-    console.log('hi')
+	console.log("hi");
+	if (gameData.currentRound == 0) {
+		var currEndTimestamp = Date.now() + gameData.plantingTime * 1000;
+	}
+	{
+		var currEndTimestamp =
+			gameData.endTimestamp + gameData.plantingTime * 1000;
+	}
+
 	await gameDataDoc.update({
 		currentRound: gameData.currentRound + 1,
+		endTimestamp: currEndTimestamp,
 	});
 	console.log("loop1");
 	setTimeout(async function () {
 		nextSeason(gameDataDoc, gameData.season, gameId);
-        await gameDataDoc.update({ roundSection: "offering" });
+		currEndTimestamp += gameData.offeringTime * 1000;
+		await gameDataDoc.update({
+			roundSection: "offering",
+			endTimestamp: currEndTimestamp,
+		});
 		setTimeout(async function () {
-			await gameDataDoc.update( { roundSection: "trading" });
+			currEndTimestamp += gameData.tradingTime * 1000;
+			await gameDataDoc.update({
+				roundSection: "trading",
+				endTimestamp: currEndTimestamp,
+			});
 			setTimeout(async function () {
-				await gameDataDoc.update( { roundSection: "planting" });
+				await gameDataDoc.update({ roundSection: "planting" });
 				roundLoop(gameDataDoc, gameId);
 			}, gameData.tradingTime * 1000);
 		}, gameData.offeringTime * 1000);
@@ -242,11 +268,11 @@ app.post("/startGame", async (req, res) => {
 		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
 		let gameData = (await gameDataDoc.get()).data();
 		if (gameData.currentRound > 0) {
-            console.log(gameData.currentRound);
+			console.log(gameData.currentRound);
 			return res.status(409).send("Game already started.");
 		} else {
-            console.log(gameDataDoc)
-			roundLoop(gameDataDoc,req.body.gameId);
+			console.log(gameDataDoc);
+			roundLoop(gameDataDoc, req.body.gameId);
 			return res.status(200).send("Game started.");
 		}
 	} else {
@@ -413,10 +439,7 @@ app.post("/plantSeed", async (req, res) => {
 			) {
 				throw new Error("Insufficient Seeds.");
 			}
-			if (
-				!Object.keys(gameData.availableCrops)
-					.includes(req.body.seed)
-			) {
+			if (!Object.keys(gameData.availableCrops).includes(req.body.seed)) {
 				throw new Error("That crop isn't in play.");
 			}
 			// if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
