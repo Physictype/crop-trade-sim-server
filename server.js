@@ -225,8 +225,8 @@ async function roundLoop(gameDataDoc,gameId) {
 	});
 	console.log("loop1");
 	setTimeout(async function () {
-		await gameDataDoc.update({ roundSection: "offering" });
 		nextSeason(gameDataDoc, gameData.season, gameId);
+        await gameDataDoc.update({ roundSection: "offering" });
 		setTimeout(async function () {
 			await gameDataDoc.update( { roundSection: "trading" });
 			setTimeout(async function () {
