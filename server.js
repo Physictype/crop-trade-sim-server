@@ -68,6 +68,32 @@ const SESSION_COOKIE_NAME = "session";
 
 let firestore = admin.firestore();
 
+app.post("/sessionLogin", async (req, res) => {
+  const idToken = req.body.idToken;
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+
+    // Optionally: create a custom session cookie (longer-lived)
+    const expiresIn = 60 * 60 * 24 * 14 * 1000; // 14 days
+    const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
+
+    // Set cookie (HttpOnly, Secure, SameSite=Strict recommended)
+    res.cookie("session", sessionCookie, {
+      httpOnly: true,
+      secure: false, // only sent over HTTPS — disable for local dev if needed
+      // TODO: MAKE TRUE
+      sameSite: "strict", // helps protect against CSRF
+      maxAge: expiresIn,
+    });
+
+    res.status(200).send("Session cookie set");
+  } catch (error) {
+    res.status(401).send("Unauthorized");
+  }
+});
+
+
 // 🔐 Middleware to protect routes
 function authenticateSession(req, res, next) {
 	const sessionCookie = req.cookies[SESSION_COOKIE_NAME] || "";
@@ -97,7 +123,7 @@ async function checkInGame(req, res, next) {
 
 // TODO: add checks so no injects
 // TODO: add middleware to verify user
-// TODO: mutex or check for changes??? prevent race conditions
+// TODO: revert to using authenticateSession + other stuff
 let admins = [];
 app.post("/createGame", authenticateSession, async (req, res) => {
 	if (true || admins.includes(req.user.uid)) {
@@ -139,8 +165,9 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 	}
 });
 app.post("/joinGame", authenticateSession, async (req, res) => {
+    console.log(req.user.uid);
 	try {
-		firestore.runTransaction(async (transaction) => {
+		await firestore.runTransaction(async (transaction) => {
 			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
 			let playerRef = getRef(
 				firestore,
@@ -157,17 +184,18 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 			);
 			let [gameDataSnapshot, playersSnapshot] = await Promise.all([
 				transaction.get(gameDataDoc),
-				transaction.getDocs(playersRef),
+				transaction.get(playersRef),
 			]);
 			let gameData = gameDataSnapshot.data();
+            console.log(gameData.currentRound);
 			if (gameData.currentRound != 0) {
 				throw new Error("Game already started.");
 			}
 			let players = playersSnapshot.docs.map((doc) => doc.id);
-			if (req.user.uid in players) {
+			if (players.includes(req.user.uid)) {
 				throw new Error("You have already joined the game.");
 			}
-			await transaction.setDoc(playerRef, {
+			await transaction.set(playerRef, {
 				crops: {},
 				money: gameData.initialMoney,
 				plot: {},
@@ -189,7 +217,6 @@ async function nextSeason(gameDataDoc, season, gameId) {
 		let gameData = gameDataSnapshot.data();
 		players.forEach(async (doc) => {
 			let player = doc.data();
-			console.log(player);
 			Object.keys(player.plot).forEach((idx) => {
 				if (player.plot[idx].type != "") {
 					player.plot[idx].stage++;
@@ -211,24 +238,19 @@ async function nextSeason(gameDataDoc, season, gameId) {
 					}
 				}
 			});
-			console.log("here?");
 			transaction.update(
 				getRef(firestore, "games", gameId, "players", doc.id),
 				player
 			);
 		});
-		console.log("or here?", doc.id);
 		transaction.update(gameDataDoc, { season: (season + 1) % 4 });
-		console.log("hey?");
 	});
-	console.log("or im stupid?");
 }
 async function roundLoop(gameDataDoc, gameId) {
 	var gameData = (await gameDataDoc.get()).data();
 	if (gameData.currentRound >= gameData.numRounds) {
 		return;
-	}
-	console.log("hi");
+    }
 	if (gameData.currentRound == 0) {
 		var currEndTimestamp = Date.now() + gameData.plantingTime * 1000;
 	}
@@ -241,7 +263,6 @@ async function roundLoop(gameDataDoc, gameId) {
 		currentRound: gameData.currentRound + 1,
 		endTimestamp: currEndTimestamp,
 	});
-	console.log("loop1");
 	setTimeout(async function () {
 		nextSeason(gameDataDoc, gameData.season, gameId);
 		currEndTimestamp += gameData.offeringTime * 1000;
@@ -262,16 +283,13 @@ async function roundLoop(gameDataDoc, gameId) {
 		}, gameData.offeringTime * 1000);
 	}, gameData.plantingTime * 1000);
 }
-app.post("/startGame", async (req, res) => {
-	// TODO: ADD authenticateSession,
+app.post("/startGame",authenticateSession, async (req, res) => {
 	if (true || admins.includes(req.user.uid)) {
 		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
 		let gameData = (await gameDataDoc.get()).data();
 		if (gameData.currentRound > 0) {
-			console.log(gameData.currentRound);
 			return res.status(409).send("Game already started.");
 		} else {
-			console.log(gameDataDoc);
 			roundLoop(gameDataDoc, req.body.gameId);
 			return res.status(200).send("Game started.");
 		}
@@ -403,10 +421,8 @@ app.post(
 		}
 	}
 );
-app.post("/plantSeed", async (req, res) => {
-	console.log("hi");
+app.post("/plantSeed",authenticateSession, checkInGame, async (req, res) => {
 	// authenticateSession, checkInGame, TODO: YOU BETTER REMEMBER TO ADD THIS BACK
-	req.user = { uid: req.body.userId };
 	try {
 		await firestore.runTransaction(async (transaction) => {
 			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
@@ -451,7 +467,6 @@ app.post("/plantSeed", async (req, res) => {
 				[`plot.${req.body.idx}.type`]: req.body.seed,
 			});
 		});
-		console.log("hi");
 		return res.status(200).send("Seed planted.");
 	} catch (e) {
 		return res.status(409).send(e.message || "Conflict. Please try again.");
