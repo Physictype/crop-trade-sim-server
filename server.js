@@ -111,9 +111,11 @@ function authenticateSession(req, res, next) {
 		.catch(() => res.status(401).send("Unauthorized"));
 }
 async function checkInGame(req, res, next) {
-	let players = await getDocs(
+	let playersRef = await 
 		getRef(firestore, "games", req.body.gameId, "players")
-	).docs.map((doc) => doc.id);
+	.get()
+    
+    let players = playersRef.docs.map((doc) => doc.id);
 	if (players.includes(req.user.uid)) {
 		next();
 	} else {
@@ -121,7 +123,7 @@ async function checkInGame(req, res, next) {
 	}
 }
 
-// TODO: add checks so no injects
+// TODO: add checks so no injects especially for NaNs
 // TODO: add middleware to verify user
 // TODO: revert to using authenticateSession + other stuff
 let admins = [];
@@ -233,8 +235,7 @@ async function nextSeason(gameDataDoc, season, gameId) {
 						} else {
 							player.crops[player.plot[idx].type] = 1;
 						}
-						player.plot[idx].type = "";
-						player.plot[idx].stage = 0;
+						delete player.plot[idx];
 					}
 				}
 			});
@@ -253,8 +254,7 @@ async function roundLoop(gameDataDoc, gameId) {
     }
 	if (gameData.currentRound == 0) {
 		var currEndTimestamp = Date.now() + gameData.plantingTime * 1000;
-	}
-	{
+	} else {
 		var currEndTimestamp =
 			gameData.endTimestamp + gameData.plantingTime * 1000;
 	}
@@ -498,16 +498,17 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 					"You may only do this during the planting phase."
 				);
 			}
-			let seedCosts = gameData.seedCosts;
-
-			if (seedCosts[req.body.seed] * req.body.count > playerData.money) {
+            console.log(gameData.availableCrops[req.body.seed].basePrice);
+            let totalCost = Math.floor(gameData.availableCrops[req.body.seed].basePrice * Math.pow(req.body.count,0.9));
+            console.log(totalCost);
+			if (totalCost > playerData.money) {
 				throw new Error("Insufficient Currency");
 			}
 
 			transaction.update(playerDataDoc, {
 				money:
 					playerData.money -
-					seedCosts[req.body.seed] * req.body.count,
+					totalCost,
 				[`seeds.${req.body.seed}`]:
 					uto0(playerData.seeds[req.body.seed]) + req.body.count,
 			});
