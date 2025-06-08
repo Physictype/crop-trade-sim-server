@@ -126,9 +126,9 @@ async function checkInGame(req, res, next) {
 // TODO: add checks so no injects especially for NaNs
 // TODO: add middleware to verify user
 // TODO: revert to using authenticateSession + other stuff
-let admins = [];
+let admins = ["26SFR8BnWmUdbsDgAAbD6RFBlew1"];
 app.post("/createGame", authenticateSession, async (req, res) => {
-	if (true || admins.includes(req.user.uid)) {
+	if (admins.includes(req.user.uid)) {
 		// TODO: remove || true
 		let gameData = {
 			availableCrops: req.body.availableCrops,
@@ -167,7 +167,6 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 	}
 });
 app.post("/joinGame", authenticateSession, async (req, res) => {
-    console.log(req.user.uid);
 	try {
 		await firestore.runTransaction(async (transaction) => {
 			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
@@ -189,7 +188,6 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				transaction.get(playersRef),
 			]);
 			let gameData = gameDataSnapshot.data();
-            console.log(gameData.currentRound);
 			if (gameData.currentRound != 0) {
 				throw new Error("Game already started.");
 			}
@@ -259,32 +257,32 @@ async function roundLoop(gameDataDoc, gameId) {
 			gameData.endTimestamp + gameData.plantingTime * 1000;
 	}
 
-	await gameDataDoc.update({
+	gameDataDoc.update({
 		currentRound: gameData.currentRound + 1,
 		endTimestamp: currEndTimestamp,
 	});
 	setTimeout(async function () {
 		nextSeason(gameDataDoc, gameData.season, gameId);
 		currEndTimestamp += gameData.offeringTime * 1000;
-		await gameDataDoc.update({
+		gameDataDoc.update({
 			roundSection: "offering",
 			endTimestamp: currEndTimestamp,
 		});
 		setTimeout(async function () {
 			currEndTimestamp += gameData.tradingTime * 1000;
-			await gameDataDoc.update({
+			gameDataDoc.update({
 				roundSection: "trading",
 				endTimestamp: currEndTimestamp,
 			});
 			setTimeout(async function () {
-				await gameDataDoc.update({ roundSection: "planting" });
+				gameDataDoc.update({ roundSection: "planting" });
 				roundLoop(gameDataDoc, gameId);
-			}, gameData.tradingTime * 1000);
-		}, gameData.offeringTime * 1000);
-	}, gameData.plantingTime * 1000);
+			}, currEndTimestamp - Date.now());
+		}, currEndTimestamp - Date.now());
+	}, currEndTimestamp - Date.now());
 }
 app.post("/startGame",authenticateSession, async (req, res) => {
-	if (true || admins.includes(req.user.uid)) {
+	if (admins.includes(req.user.uid)) {
 		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
 		let gameData = (await gameDataDoc.get()).data();
 		if (gameData.currentRound > 0) {
@@ -498,9 +496,7 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 					"You may only do this during the planting phase."
 				);
 			}
-            console.log(gameData.availableCrops[req.body.seed].basePrice);
             let totalCost = Math.floor(gameData.availableCrops[req.body.seed].basePrice * Math.pow(req.body.count,0.9));
-            console.log(totalCost);
 			if (totalCost > playerData.money) {
 				throw new Error("Insufficient Currency");
 			}
