@@ -145,7 +145,8 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 		// must add checks, but for now its fine
 		async function generateGameID() {
 			// maybe change this function?
-			let currentIds = await getDocs(collection(firestore, "games"));
+			let currentIds = await getRef(firestore, "games").get()
+                .then((snapshot) => snapshot.docs.map((doc) => doc.id));
 			function stringDigit() {
 				return "0123456789"[Math.floor(Math.random() * 10)];
 			}
@@ -159,8 +160,8 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 				}
 			}
 		}
-		let id = generateGameID();
-		await setDoc(getRef(firestore, "games", id), gameData);
+		let id = await generateGameID();
+        await getRef(firestore, "games", id).set(gameData);
 		return res.status(200).send(id);
 	} else {
 		return res.status(401).send("Unauthorized");
