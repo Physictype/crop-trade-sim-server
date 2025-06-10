@@ -139,7 +139,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			tradingTime: req.body.tradingTime,
 			plotWidth: req.body.plotWidth,
 			plotHeight: req.body.plotHeight,
-			roundSection: "planting",
+			roundSection: "Planting",
 			season: 0,
 		};
 		// must add checks, but for now its fine
@@ -200,6 +200,8 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				money: gameData.initialMoney,
 				plot: {},
 				seeds: {},
+                nickname: req.body.nickname || req.user.uid,
+                offers: {},
 			});
 		});
 		return res.status(200).send("Game joined.");
@@ -265,17 +267,17 @@ async function roundLoop(gameDataDoc, gameId) {
 		nextSeason(gameDataDoc, gameData.season, gameId);
 		currEndTimestamp += gameData.offeringTime * 1000;
 		gameDataDoc.update({
-			roundSection: "offering",
+			roundSection: "Offering",
 			endTimestamp: currEndTimestamp,
 		});
 		setTimeout(async function () {
 			currEndTimestamp += gameData.tradingTime * 1000;
 			gameDataDoc.update({
-				roundSection: "trading",
+				roundSection: "Trading",
 				endTimestamp: currEndTimestamp,
 			});
 			setTimeout(async function () {
-				gameDataDoc.update({ roundSection: "planting" });
+				gameDataDoc.update({ roundSection: "Planting" });
 				roundLoop(gameDataDoc, gameId);
 			}, currEndTimestamp - Date.now());
 		}, currEndTimestamp - Date.now());
@@ -314,15 +316,15 @@ app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
-			if (gameData.roundSection != "offering") {
+			if (gameData.roundSection != "Offering") {
 				throw new Error(
 					"You may only do this during the offering phase."
 				);
 			}
 			let playerData = playerDataSnapshot.data();
 			playerData.offers[req.body.crop] = {
-				num: parseInt(req.body.num),
-				pricePer: parseInt(req.body.price),
+				num: parseInt(req.body.num) || 0,
+				pricePer: parseInt(req.body.price) || 0,
 			};
 			if (
 				!(
@@ -348,6 +350,10 @@ app.post(
 	async (req, res) => {
 		try {
 			await firestore.runTransaction(async (transaction) => {
+                req.body.num = parseInt(req.body.num) || 0;
+                if (req.body.num <= 0) {
+                    throw new Error("Invalid number of crops to trade.");
+                }
 				let gameDataDoc = getRef(firestore, "games", req.body.gameId);
 				let playerDataDoc = await getRef(
 					firestore,
@@ -373,7 +379,7 @@ app.post(
 				if (gameData.currentRound > gameData.numRounds) {
 					throw new Error("The game has ended.");
 				}
-				if (gameData.roundSection != "trading") {
+				if (gameData.roundSection != "Trading") {
 					throw new Error(
 						"You may only do this during the trading phase."
 					);
@@ -394,19 +400,19 @@ app.post(
 						"That is more than the other player is offering."
 					);
 				}
-				transaction.update(playerData, {
+				transaction.update(playerDataDoc, {
 					money:
-						money -
+						playerData.money -
 						req.body.num * otherData.offers[req.body.type].pricePer,
 					[`crops.${req.body.type}`]:
-						playerData.crops[req.body.type] + req.body.num,
+						uto0(playerData.crops[req.body.type]) + req.body.num,
 				});
-				transaction.update(otherData, {
+				transaction.update(otherDataDoc, {
 					money:
-						money +
+						otherData.money +
 						req.body.num * otherData.offers[req.body.type].pricePer,
 					[`crops.${req.body.type}`]:
-						playerData.crops[req.body.type] - req.body.num,
+						otherData.crops[req.body.type] - req.body.num,
 					[`offers.${req.body.type}.num`]:
 						otherData.offers[req.body.type].num - req.body.num,
 				});
@@ -441,7 +447,7 @@ app.post("/plantSeed",authenticateSession, checkInGame, async (req, res) => {
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
-			if (gameData.roundSection != "planting") {
+			if (gameData.roundSection != "Planting") {
 				throw new Error(
 					"You may only do this during the planting phase."
 				);
@@ -491,7 +497,7 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
-			if (gameData.roundSection != "planting") {
+			if (gameData.roundSection != "Planting") {
 				throw new Error(
 					"You may only do this during the planting phase."
 				);
