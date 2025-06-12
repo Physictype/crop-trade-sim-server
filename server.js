@@ -5,6 +5,8 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import firebaseAdmin from "firebase-admin";
 import serviceAccount from "./serviceAccountKey.json" with { type: "json" };
+// _
+// import _ from "lodash";
 
 export const admin = firebaseAdmin.initializeApp({
 	credential: firebaseAdmin.credential.cert(serviceAccount),
@@ -69,30 +71,31 @@ const SESSION_COOKIE_NAME = "session";
 let firestore = admin.firestore();
 
 app.post("/sessionLogin", async (req, res) => {
-  const idToken = req.body.idToken;
+	const idToken = req.body.idToken;
 
-  try {
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+	try {
+		const decodedToken = await admin.auth().verifyIdToken(idToken);
 
-    // Optionally: create a custom session cookie (longer-lived)
-    const expiresIn = 60 * 60 * 24 * 14 * 1000; // 14 days
-    const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
+		// Optionally: create a custom session cookie (longer-lived)
+		const expiresIn = 60 * 60 * 24 * 14 * 1000; // 14 days
+		const sessionCookie = await admin
+			.auth()
+			.createSessionCookie(idToken, { expiresIn });
 
-    // Set cookie (HttpOnly, Secure, SameSite=Strict recommended)
-    res.cookie("session", sessionCookie, {
-      httpOnly: true,
-      secure: false, // only sent over HTTPS — disable for local dev if needed
-      // TODO: MAKE TRUE
-      sameSite: "strict", // helps protect against CSRF
-      maxAge: expiresIn,
-    });
+		// Set cookie (HttpOnly, Secure, SameSite=Strict recommended)
+		res.cookie("session", sessionCookie, {
+			httpOnly: true,
+			secure: false, // only sent over HTTPS — disable for local dev if needed
+			// TODO: MAKE TRUE
+			sameSite: "strict", // helps protect against CSRF
+			maxAge: expiresIn,
+		});
 
-    res.status(200).send("Session cookie set");
-  } catch (error) {
-    res.status(401).send("Unauthorized");
-  }
+		res.status(200).send("Session cookie set");
+	} catch (error) {
+		res.status(401).send("Unauthorized");
+	}
 });
-
 
 // 🔐 Middleware to protect routes
 function authenticateSession(req, res, next) {
@@ -111,16 +114,100 @@ function authenticateSession(req, res, next) {
 		.catch(() => res.status(401).send("Unauthorized"));
 }
 async function checkInGame(req, res, next) {
-	let playersRef = await 
-		getRef(firestore, "games", req.body.gameId, "players")
-	.get()
-    
-    let players = playersRef.docs.map((doc) => doc.id);
+	let playersRef = await getRef(
+		firestore,
+		"games",
+		req.body.gameId,
+		"players"
+	).get();
+
+	let players = playersRef.docs.map((doc) => doc.id);
 	if (players.includes(req.user.uid)) {
 		next();
 	} else {
 		return res.status(403).send("You are not in this game.");
 	}
+}
+
+function nestedIndex(obj, path) {
+	let curr = obj;
+	path.split(".").forEach((segment) => {
+        console.log(curr);
+		curr = curr[segment];
+	});
+	return curr;
+}
+
+function expandKeys(obj,path) {
+    if (path.split(".").length == 1) {
+        if (path == "*") {
+            return Object.keys(obj);
+        } else {
+            return path;
+        }
+    }
+    let split = path.split(/\.(.*)/s);
+    let head = split[0];
+    let tail = split[1];
+    let res = [];
+    if (head == "*") {
+        Object.keys(obj).forEach((key) => {
+            expandKeys(obj[key],tail).forEach((pathTail) => {
+                res.push(key+"."+pathTail);
+            });
+        });
+    } else {
+        expandKeys(obj[head],tail).forEach((pathTail) => {
+            res.push(head+"."+pathTail);
+        });
+    }
+    return res;
+}
+
+function evaluateUpgrade(data, upgrade, target) {
+	if (typeof upgrade == "undefined") {
+		return NaN;
+	}
+	if (typeof upgrade == "number") {
+		return upgrade;
+	}
+    if (upgrade == "this") {
+        return nestedIndex(data, target);
+    }
+	if (typeof upgrade == "string") {
+		return nestedIndex(data, upgrade);
+	}
+	let leftEval = evaluateUpgrade(data, upgrade.left);
+	let rightEval = evaluateUpgrade(data, upgrade.right);
+	switch (upgrade.operation) {
+		case "+":
+			return leftEval + rightEval;
+		case "-":
+			return leftEval - rightEval;
+		case "*":
+			return leftEval * rightEval;
+		case "/":
+			return leftEval / rightEval;
+		case "&":
+			return leftEval & rightEval;
+		case "|":
+			return leftEval | rightEval;
+		default:
+			return NaN;
+	}
+}
+function applyUpgradeBundles(_player, _data) {
+	let data = _.cloneDeep(_data);
+	data.player = _.cloneDeep(_player);
+    _player.upgradeBundles.forEach((upgradeBundle) => {
+        upgradeBundle.upgrades.forEach((upgrade) => {
+            let _data = _.cloneDeep(data);
+            expandKeys(_data, upgrade.target).forEach((key) => {
+                nestedIndex(data.player,key) = evaluateUpgrade(_data, upgrade, key);
+            });
+        });
+    })
+	return data.player;
 }
 
 // TODO: add checks so no injects especially for NaNs
@@ -139,14 +226,17 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			tradingTime: req.body.tradingTime,
 			plotWidth: req.body.plotWidth,
 			plotHeight: req.body.plotHeight,
+			initialMoney: req.body.initialMoney,
+			useUpgrades: [], // req.body.useUpgrades
 			roundSection: "Planting",
 			season: 0,
 		};
 		// must add checks, but for now its fine
 		async function generateGameID() {
 			// maybe change this function?
-			let currentIds = await getRef(firestore, "games").get()
-                .then((snapshot) => snapshot.docs.map((doc) => doc.id));
+			let currentIds = await getRef(firestore, "games")
+				.get()
+				.then((snapshot) => snapshot.docs.map((doc) => doc.id));
 			function stringDigit() {
 				return "0123456789"[Math.floor(Math.random() * 10)];
 			}
@@ -161,7 +251,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			}
 		}
 		let id = await generateGameID();
-        await getRef(firestore, "games", id).set(gameData);
+		await getRef(firestore, "games", id).set(gameData);
 		return res.status(200).send(id);
 	} else {
 		return res.status(401).send("Unauthorized");
@@ -196,13 +286,19 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 			if (players.includes(req.user.uid)) {
 				throw new Error("You have already joined the game.");
 			}
+			let defaultEfficiencies = {};
+			Object.keys(gameData.availableCrops).forEach((key) => {
+				defaultEfficiencies[key] = 1;
+			});
 			await transaction.set(playerRef, {
 				crops: {},
 				money: gameData.initialMoney,
 				plot: {},
 				seeds: {},
-                nickname: req.body.nickname || req.user.uid,
-                offers: {},
+				nickname: req.body.nickname || req.user.uid,
+				offers: {},
+				cropEfficiencies: defaultEfficiencies,
+				upgradeBundles: [],
 			});
 		});
 		return res.status(200).send("Game joined.");
@@ -220,6 +316,7 @@ async function nextSeason(gameDataDoc, season, gameId) {
 		let gameData = gameDataSnapshot.data();
 		players.forEach(async (doc) => {
 			let player = doc.data();
+            let upgradedPlayer = applyUpgradeBundles(player,gameData);
 			Object.keys(player.plot).forEach((idx) => {
 				if (player.plot[idx].type != "") {
 					player.plot[idx].stage++;
@@ -232,9 +329,9 @@ async function nextSeason(gameDataDoc, season, gameId) {
 							(1 << gameData.season > 0)
 					) {
 						if (player.plot[idx].type in player.crops) {
-							player.crops[player.plot[idx].type]++;
+							player.crops[player.plot[idx].type]+=upgradedPlayer.cropEfficiencies[player.plot[idx].type];
 						} else {
-							player.crops[player.plot[idx].type] = 1;
+							player.crops[player.plot[idx].type] = upgradedPlayer.cropEfficiencies[player.plot[idx].type];
 						}
 						delete player.plot[idx];
 					}
@@ -252,7 +349,7 @@ async function roundLoop(gameDataDoc, gameId) {
 	var gameData = (await gameDataDoc.get()).data();
 	if (gameData.currentRound >= gameData.numRounds) {
 		return;
-    }
+	}
 	if (gameData.currentRound == 0) {
 		var currEndTimestamp = Date.now() + gameData.plantingTime * 1000;
 	} else {
@@ -284,7 +381,7 @@ async function roundLoop(gameDataDoc, gameId) {
 		}, currEndTimestamp - Date.now());
 	}, currEndTimestamp - Date.now());
 }
-app.post("/startGame",authenticateSession, async (req, res) => {
+app.post("/startGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid)) {
 		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
 		let gameData = (await gameDataDoc.get()).data();
@@ -351,10 +448,10 @@ app.post(
 	async (req, res) => {
 		try {
 			await firestore.runTransaction(async (transaction) => {
-                req.body.num = parseInt(req.body.num) || 0;
-                if (req.body.num <= 0) {
-                    throw new Error("Invalid number of crops to trade.");
-                }
+				req.body.num = parseInt(req.body.num) || 0;
+				if (req.body.num <= 0) {
+					throw new Error("Invalid number of crops to trade.");
+				}
 				let gameDataDoc = getRef(firestore, "games", req.body.gameId);
 				let playerDataDoc = await getRef(
 					firestore,
@@ -426,7 +523,7 @@ app.post(
 		}
 	}
 );
-app.post("/plantSeed",authenticateSession, checkInGame, async (req, res) => {
+app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 	// authenticateSession, checkInGame, TODO: YOU BETTER REMEMBER TO ADD THIS BACK
 	try {
 		await firestore.runTransaction(async (transaction) => {
@@ -494,6 +591,9 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 				transaction.get(playerDataDoc),
 			]);
 			let gameData = gameDataSnapshot.data();
+			if (gameData.currentRound == 0) {
+				// TODO: prevent playing before game starts
+			}
 			let playerData = playerDataSnapshot.data();
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
@@ -503,15 +603,16 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 					"You may only do this during the planting phase."
 				);
 			}
-            let totalCost = Math.floor(gameData.availableCrops[req.body.seed].basePrice * Math.pow(req.body.count,0.9));
+			let totalCost = Math.floor(
+				gameData.availableCrops[req.body.seed].basePrice *
+					Math.pow(req.body.count, 0.9)
+			);
 			if (totalCost > playerData.money) {
 				throw new Error("Insufficient Currency");
 			}
 
 			transaction.update(playerDataDoc, {
-				money:
-					playerData.money -
-					totalCost,
+				money: playerData.money - totalCost,
 				[`seeds.${req.body.seed}`]:
 					uto0(playerData.seeds[req.body.seed]) + req.body.count,
 			});
