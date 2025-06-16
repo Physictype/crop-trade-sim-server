@@ -137,8 +137,20 @@ function nestedIndex(obj, path) {
 	});
 	return curr;
 }
+function assignNestedIndex(obj, path, val) {
+    if (path.split(".").length == 1) {
+        obj[path] = val;
+        return obj;
+    }
+    let split = path.split(/\.(.*)/s);
+    let head = split[0];
+    let tail = split[1];
+    obj[head] = assignNestedIndex(obj[head], tail, val);
+    return obj;
+}
 
 function expandKeys(obj,path) {
+    console.log(obj,path);
     if (path.split(".").length == 1) {
         if (path == "*") {
             return Object.keys(obj);
@@ -172,13 +184,15 @@ function evaluateUpgrade(data, upgrade, target) {
 		return upgrade;
 	}
     if (upgrade == "this") {
+        console.log("this reference:", target);
         return nestedIndex(data, target);
     }
 	if (typeof upgrade == "string") {
+        console.log("reference:",upgrade);
 		return nestedIndex(data, upgrade);
 	}
-	let leftEval = evaluateUpgrade(data, upgrade.left);
-	let rightEval = evaluateUpgrade(data, upgrade.right);
+	let leftEval = evaluateUpgrade(data, upgrade.left, target);
+	let rightEval = evaluateUpgrade(data, upgrade.right, target);
 	switch (upgrade.operation) {
 		case "+":
 			return leftEval + rightEval;
@@ -199,14 +213,18 @@ function evaluateUpgrade(data, upgrade, target) {
 function applyUpgradeBundles(_player, _data) {
 	let data = _.cloneDeep(_data);
 	data.player = _.cloneDeep(_player);
+    console.log("DATA", data);
     _player.upgradeBundles.forEach((upgradeBundle) => {
         upgradeBundle.upgrades.forEach((upgrade) => {
             let _data = _.cloneDeep(data);
             expandKeys(_data, upgrade.target).forEach((key) => {
-                nestedIndex(data.player,key) = evaluateUpgrade(_data, upgrade, key);
+                console.log(key,":",evaluateUpgrade(_data, upgrade, key));
+                assignNestedIndex(data,key,evaluateUpgrade(_data, upgrade, key));
+                console.log(key,evaluateUpgrade(_data, upgrade, key));
             });
         });
     })
+    console.log(data.player);
 	return data.player;
 }
 
@@ -286,9 +304,11 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 			if (players.includes(req.user.uid)) {
 				throw new Error("You have already joined the game.");
 			}
-			let defaultEfficiencies = {};
+			let efficiencies = {};
 			Object.keys(gameData.availableCrops).forEach((key) => {
-				defaultEfficiencies[key] = 1;
+                let crop = gameData.availableCrops[key];
+                console.log(crop.efficiencyMax,crop.efficiencyMin);
+		        efficiencies[key] = Math.floor(Math.random()*(crop.efficiencyMax-crop.efficiencyMin+1))+crop.efficiencyMin;
 			});
 			await transaction.set(playerRef, {
 				crops: {},
@@ -297,7 +317,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				seeds: {},
 				nickname: req.body.nickname || req.user.uid,
 				offers: {},
-				cropEfficiencies: defaultEfficiencies,
+				cropEfficiencies: efficiencies,
 				upgradeBundles: [],
 			});
 		});
@@ -328,8 +348,11 @@ async function nextSeason(gameDataDoc, season, gameId) {
 							.seasonsMap &
 							(1 << gameData.season > 0)
 					) {
+                        console.log("ARST",upgradedPlayer.cropEfficiencies);
 						if (player.plot[idx].type in player.crops) {
+                            console.log(player.crops[player.plot[idx].type]);
 							player.crops[player.plot[idx].type]+=upgradedPlayer.cropEfficiencies[player.plot[idx].type];
+                            console.log(player.crops[player.plot[idx].type]);
 						} else {
 							player.crops[player.plot[idx].type] = upgradedPlayer.cropEfficiencies[player.plot[idx].type];
 						}
