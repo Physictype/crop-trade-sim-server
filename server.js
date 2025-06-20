@@ -89,8 +89,8 @@ app.post("/sessionLogin", async (req, res) => {
 			.createSessionCookie(idToken, { expiresIn });
 
 		res.cookie("session", sessionCookie, {
-			// httpOnly: true,
-			secure: true,
+			httpOnly: false,
+			secure: false,
 			sameSite: "None",
 			maxAge: expiresIn,
 		});
