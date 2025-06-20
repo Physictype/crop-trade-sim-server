@@ -96,7 +96,6 @@ app.post("/sessionLogin", async (req, res) => {
 
 		res.status(200).send("Session cookie set");
 	} catch (error) {
-		console.debug(error);
 		res.status(401).send("Unauthorized");
 	}
 });
@@ -108,6 +107,7 @@ function authenticateSession(req, res, next) {
 		res.status(400);
 		return;
 	}
+	console.log(sessionCookie);
 	admin
 		.auth()
 		.verifySessionCookie(sessionCookie, true)
@@ -235,6 +235,7 @@ let admins = ["26SFR8BnWmUdbsDgAAbD6RFBlew1"];
 
 app.get("/authenticated", async (req, res) => {
 	const sessionCookie = req.cookies[SESSION_COOKIE_NAME] || "";
+	console.log(sessionCookie);
 	admin
 		.auth()
 		.verifySessionCookie(sessionCookie, true)
