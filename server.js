@@ -7,16 +7,19 @@ import firebaseAdmin from "firebase-admin";
 import serviceAccount from "./serviceAccountKey.json" with { type: "json" };
 // _
 // import _ from "lodash";
+dotenv.config();
 
 export const admin = firebaseAdmin.initializeApp({
-	credential: firebaseAdmin.credential.cert(serviceAccount),
+	credential: firebaseAdmin.credential.cert({
+        "projectId": process.env.FIREBASE_PROJECT_ID,
+        "private_key": process.env.FIREBASE_PRIVATE_KEY,
+        "client_email": process.env.FIREBASE_CLIENT_EMAIL,
+    }),
 });
 import { doc, collection, updateDoc, getDocs } from "firebase/firestore";
 import cors from "cors";
 import _ from "lodash";
 // import { getDoc } from "firebase";
-
-dotenv.config();
 
 // const privateKey = fs.readFileSync("decrypted-private-key.pem", "utf8");
 // const certificate = fs.readFileSync("certificate.pem", "utf8");
