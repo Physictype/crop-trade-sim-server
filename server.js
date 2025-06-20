@@ -12,7 +12,7 @@ dotenv.config();
 export const admin = firebaseAdmin.initializeApp({
 	credential: firebaseAdmin.credential.cert({
 		projectId: process.env.FIREBASE_PROJECT_ID,
-		private_key: process.env.FIREBASE_PRIVATE_KEY,
+		private_key: JSON.parse(process.env.FIREBASE_PRIVATE_KEY).privateKey,
 		client_email: process.env.FIREBASE_CLIENT_EMAIL,
 	}),
 });
