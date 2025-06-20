@@ -232,7 +232,7 @@ app.get("/authenticated", async (req, res) => {
 		.auth()
 		.verifySessionCookie(sessionCookie, true)
 		.then((decodedClaims) => {
-			res.status(200);
+			res.status(200).send("Authorized");
 		})
 		.catch(() => res.status(401).send("Unauthorized"));
 });
