@@ -58,7 +58,7 @@ app.use((req, res, next) => {
 });
 app.use(
 	cors({
-		origin: "https://physictype.dev", // exact frontend origin here
+		origin: "https://crop-trade-sim.web.app/", // exact frontend origin here
 		credentials: true, // allow cookies/auth credentials
 	})
 );
