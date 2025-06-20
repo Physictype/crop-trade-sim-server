@@ -67,32 +67,66 @@ const SESSION_COOKIE_NAME = "session";
 
 let firestore = admin.firestore();
 
-app.post("/sessionLogin", async (req, res) => {
+pp.post("/sessionLogin", async (req, res) => {
 	const idToken = req.body.idToken;
+	console.log(
+		"Incoming sessionLogin POST. idToken:",
+		idToken?.slice(0, 20),
+		"..."
+	);
+
+	if (!idToken) {
+		return res.status(400).send("Missing idToken in body");
+	}
 
 	try {
 		const decodedToken = await admin.auth().verifyIdToken(idToken);
+		console.log("Decoded token UID:", decodedToken.uid);
 
-		// Optionally: create a custom session cookie (longer-lived)
-		const expiresIn = 60 * 60 * 24 * 14 * 1000; // 14 days
+		const expiresIn = 60 * 60 * 24 * 14 * 1000;
 		const sessionCookie = await admin
 			.auth()
 			.createSessionCookie(idToken, { expiresIn });
 
-		// Set cookie (HttpOnly, Secure, SameSite=Strict recommended)
 		res.cookie("session", sessionCookie, {
 			httpOnly: true,
-			secure: true, // only sent over HTTPS — disable for local dev if needed
-			// TODO: MAKE TRUE
-			sameSite: "none", // helps protect against CSRF
+			secure: true,
+			sameSite: "None",
 			maxAge: expiresIn,
 		});
 
 		res.status(200).send("Session cookie set");
 	} catch (error) {
+		console.error("Failed to verify ID token:", error.message);
 		res.status(401).send("Unauthorized");
 	}
 });
+// app.post("/sessionLogin", async (req, res) => {
+// 	const idToken = req.body.idToken;
+
+// 	try {
+// 		const decodedToken = await admin.auth().verifyIdToken(idToken);
+
+// 		// Optionally: create a custom session cookie (longer-lived)
+// 		const expiresIn = 60 * 60 * 24 * 14 * 1000; // 14 days
+// 		const sessionCookie = await admin
+// 			.auth()
+// 			.createSessionCookie(idToken, { expiresIn });
+
+// 		// Set cookie (HttpOnly, Secure, SameSite=Strict recommended)
+// 		res.cookie("session", sessionCookie, {
+// 			httpOnly: true,
+// 			secure: true, // only sent over HTTPS — disable for local dev if needed
+// 			// TODO: MAKE TRUE
+// 			sameSite: "none", // helps protect against CSRF
+// 			maxAge: expiresIn,
+// 		});
+
+// 		res.status(200).send("Session cookie set");
+// 	} catch (error) {
+// 		res.status(401).send("Unauthorized");
+// 	}
+// });
 
 // 🔐 Middleware to protect routes
 function authenticateSession(req, res, next) {
