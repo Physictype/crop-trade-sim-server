@@ -52,13 +52,13 @@ app.use(cookieParser());
 app.use((req, res, next) => {
 	res.setHeader(
 		"Content-Security-Policy",
-		"default-src 'none'; connect-src 'self' https://physictype.dev;"
+		"default-src 'none'; connect-src 'self' https://crop-trade-sim.web.app;"
 	); // Allow connections to the backend API
 	next();
 });
 app.use(
 	cors({
-		origin: "https://crop-trade-sim.web.app/", // exact frontend origin here
+		origin: "https://crop-trade-sim.web.app", // exact frontend origin here
 		credentials: true, // allow cookies/auth credentials
 	})
 );
