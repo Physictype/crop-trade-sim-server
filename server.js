@@ -52,17 +52,17 @@ app.use(cookieParser());
 app.use((req, res, next) => {
 	res.setHeader(
 		"Content-Security-Policy",
-		"default-src 'none'; connect-src 'self' http://localhost:3000;"
+		"default-src 'none'; connect-src 'self' https://physictype.dev/;"
 	); // Allow connections to the backend API
 	next();
 });
 const corsOptions = {
-	origin: "http://localhost:5173", // Allow requests from your frontend
+	origin: "https://physictype.dev/", // Allow requests from your frontend
 	methods: ["GET", "POST", "PUT", "DELETE"],
 };
 app.use(
 	cors({
-		origin: "http://localhost:5173", // exact frontend origin here
+		origin: "https://physictype.dev/", // exact frontend origin here
 		credentials: true, // allow cookies/auth credentials
 	})
 );
