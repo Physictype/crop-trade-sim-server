@@ -84,7 +84,7 @@ app.post("/sessionLogin", async (req, res) => {
 			httpOnly: true,
 			secure: true, // only sent over HTTPS — disable for local dev if needed
 			// TODO: MAKE TRUE
-			sameSite: "strict", // helps protect against CSRF
+			sameSite: "none", // helps protect against CSRF
 			maxAge: expiresIn,
 		});
 
