@@ -132,7 +132,6 @@ async function checkInGame(req, res, next) {
 function nestedIndex(obj, path) {
 	let curr = obj;
 	path.split(".").forEach((segment) => {
-        console.log(curr);
 		curr = curr[segment];
 	});
 	return curr;
@@ -150,7 +149,6 @@ function assignNestedIndex(obj, path, val) {
 }
 
 function expandKeys(obj,path) {
-    console.log(obj,path);
     if (path.split(".").length == 1) {
         if (path == "*") {
             return Object.keys(obj);
@@ -184,11 +182,9 @@ function evaluateUpgrade(data, upgrade, target) {
 		return upgrade;
 	}
     if (upgrade == "this") {
-        console.log("this reference:", target);
         return nestedIndex(data, target);
     }
 	if (typeof upgrade == "string") {
-        console.log("reference:",upgrade);
 		return nestedIndex(data, upgrade);
 	}
 	let leftEval = evaluateUpgrade(data, upgrade.left, target);
@@ -213,18 +209,14 @@ function evaluateUpgrade(data, upgrade, target) {
 function applyUpgradeBundles(_player, _data) {
 	let data = _.cloneDeep(_data);
 	data.player = _.cloneDeep(_player);
-    console.log("DATA", data);
     _player.upgradeBundles.forEach((upgradeBundle) => {
         upgradeBundle.upgrades.forEach((upgrade) => {
             let _data = _.cloneDeep(data);
             expandKeys(_data, upgrade.target).forEach((key) => {
-                console.log(key,":",evaluateUpgrade(_data, upgrade, key));
                 assignNestedIndex(data,key,evaluateUpgrade(_data, upgrade, key));
-                console.log(key,evaluateUpgrade(_data, upgrade, key));
             });
         });
     })
-    console.log(data.player);
 	return data.player;
 }
 
@@ -232,6 +224,18 @@ function applyUpgradeBundles(_player, _data) {
 // TODO: add middleware to verify user
 // TODO: revert to using authenticateSession + other stuff
 let admins = ["26SFR8BnWmUdbsDgAAbD6RFBlew1"];
+
+app.get("/authenticated", async (req,res) => {
+    const sessionCookie = req.cookies[SESSION_COOKIE_NAME] || "";
+	admin
+		.auth()
+		.verifySessionCookie(sessionCookie, true)
+		.then((decodedClaims) => {
+            res.status(200);
+		})
+		.catch(() => res.status(401).send("Unauthorized"));
+    
+});
 app.post("/createGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid)) {
 		// TODO: remove || true
@@ -307,7 +311,6 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 			let efficiencies = {};
 			Object.keys(gameData.availableCrops).forEach((key) => {
                 let crop = gameData.availableCrops[key];
-                console.log(crop.efficiencyMax,crop.efficiencyMin);
 		        efficiencies[key] = Math.floor(Math.random()*(crop.efficiencyMax-crop.efficiencyMin+1))+crop.efficiencyMin;
 			});
 			await transaction.set(playerRef, {
@@ -348,11 +351,8 @@ async function nextSeason(gameDataDoc, season, gameId) {
 							.seasonsMap &
 							(1 << gameData.season > 0)
 					) {
-                        console.log("ARST",upgradedPlayer.cropEfficiencies);
 						if (player.plot[idx].type in player.crops) {
-                            console.log(player.crops[player.plot[idx].type]);
 							player.crops[player.plot[idx].type]+=upgradedPlayer.cropEfficiencies[player.plot[idx].type];
-                            console.log(player.crops[player.plot[idx].type]);
 						} else {
 							player.crops[player.plot[idx].type] = upgradedPlayer.cropEfficiencies[player.plot[idx].type];
 						}
@@ -434,6 +434,9 @@ app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 				transaction.get(playerDataDoc),
 			]);
 			let gameData = gameDataSnapshot.data();
+            if (gameData.currentRound == 0) {
+                throw new Error("The game has not started yet.");
+            }
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
@@ -565,6 +568,9 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 
 			let gameData = gameDataSnap.data();
 			let playerData = playerDataSnap.data();
+            if (gameData.currentRound == 0) {
+                throw new Error("The game has not started yet.");
+            }
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
@@ -615,8 +621,8 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 			]);
 			let gameData = gameDataSnapshot.data();
 			if (gameData.currentRound == 0) {
-				// TODO: prevent playing before game starts
-			}
+                throw new Error("The game has not started yet.");
+            }
 			let playerData = playerDataSnapshot.data();
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
