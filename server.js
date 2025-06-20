@@ -82,7 +82,7 @@ app.post("/sessionLogin", async (req, res) => {
 		// Set cookie (HttpOnly, Secure, SameSite=Strict recommended)
 		res.cookie("session", sessionCookie, {
 			httpOnly: true,
-			secure: false, // only sent over HTTPS — disable for local dev if needed
+			secure: true, // only sent over HTTPS — disable for local dev if needed
 			// TODO: MAKE TRUE
 			sameSite: "strict", // helps protect against CSRF
 			maxAge: expiresIn,
