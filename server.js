@@ -96,7 +96,7 @@ app.post("/sessionLogin", async (req, res) => {
 
 		res.status(200).send("Session cookie set");
 	} catch (error) {
-		console.log(error);
+		console.debug(error);
 		res.status(401).send("Unauthorized");
 	}
 });
