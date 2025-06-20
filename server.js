@@ -4,17 +4,17 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import firebaseAdmin from "firebase-admin";
-import serviceAccount from "./serviceAccountKey.json" with { type: "json" };
+// import serviceAccount from "./serviceAccountKey.json" with { type: "json" };
 // _
 // import _ from "lodash";
 dotenv.config();
 
 export const admin = firebaseAdmin.initializeApp({
 	credential: firebaseAdmin.credential.cert({
-        "projectId": process.env.FIREBASE_PROJECT_ID,
-        "private_key": process.env.FIREBASE_PRIVATE_KEY,
-        "client_email": process.env.FIREBASE_CLIENT_EMAIL,
-    }),
+		projectId: process.env.FIREBASE_PROJECT_ID,
+		private_key: process.env.FIREBASE_PRIVATE_KEY,
+		client_email: process.env.FIREBASE_CLIENT_EMAIL,
+	}),
 });
 import { doc, collection, updateDoc, getDocs } from "firebase/firestore";
 import cors from "cors";
@@ -140,41 +140,41 @@ function nestedIndex(obj, path) {
 	return curr;
 }
 function assignNestedIndex(obj, path, val) {
-    if (path.split(".").length == 1) {
-        obj[path] = val;
-        return obj;
-    }
-    let split = path.split(/\.(.*)/s);
-    let head = split[0];
-    let tail = split[1];
-    obj[head] = assignNestedIndex(obj[head], tail, val);
-    return obj;
+	if (path.split(".").length == 1) {
+		obj[path] = val;
+		return obj;
+	}
+	let split = path.split(/\.(.*)/s);
+	let head = split[0];
+	let tail = split[1];
+	obj[head] = assignNestedIndex(obj[head], tail, val);
+	return obj;
 }
 
-function expandKeys(obj,path) {
-    if (path.split(".").length == 1) {
-        if (path == "*") {
-            return Object.keys(obj);
-        } else {
-            return path;
-        }
-    }
-    let split = path.split(/\.(.*)/s);
-    let head = split[0];
-    let tail = split[1];
-    let res = [];
-    if (head == "*") {
-        Object.keys(obj).forEach((key) => {
-            expandKeys(obj[key],tail).forEach((pathTail) => {
-                res.push(key+"."+pathTail);
-            });
-        });
-    } else {
-        expandKeys(obj[head],tail).forEach((pathTail) => {
-            res.push(head+"."+pathTail);
-        });
-    }
-    return res;
+function expandKeys(obj, path) {
+	if (path.split(".").length == 1) {
+		if (path == "*") {
+			return Object.keys(obj);
+		} else {
+			return path;
+		}
+	}
+	let split = path.split(/\.(.*)/s);
+	let head = split[0];
+	let tail = split[1];
+	let res = [];
+	if (head == "*") {
+		Object.keys(obj).forEach((key) => {
+			expandKeys(obj[key], tail).forEach((pathTail) => {
+				res.push(key + "." + pathTail);
+			});
+		});
+	} else {
+		expandKeys(obj[head], tail).forEach((pathTail) => {
+			res.push(head + "." + pathTail);
+		});
+	}
+	return res;
 }
 
 function evaluateUpgrade(data, upgrade, target) {
@@ -184,9 +184,9 @@ function evaluateUpgrade(data, upgrade, target) {
 	if (typeof upgrade == "number") {
 		return upgrade;
 	}
-    if (upgrade == "this") {
-        return nestedIndex(data, target);
-    }
+	if (upgrade == "this") {
+		return nestedIndex(data, target);
+	}
 	if (typeof upgrade == "string") {
 		return nestedIndex(data, upgrade);
 	}
@@ -212,14 +212,18 @@ function evaluateUpgrade(data, upgrade, target) {
 function applyUpgradeBundles(_player, _data) {
 	let data = _.cloneDeep(_data);
 	data.player = _.cloneDeep(_player);
-    _player.upgradeBundles.forEach((upgradeBundle) => {
-        upgradeBundle.upgrades.forEach((upgrade) => {
-            let _data = _.cloneDeep(data);
-            expandKeys(_data, upgrade.target).forEach((key) => {
-                assignNestedIndex(data,key,evaluateUpgrade(_data, upgrade, key));
-            });
-        });
-    })
+	_player.upgradeBundles.forEach((upgradeBundle) => {
+		upgradeBundle.upgrades.forEach((upgrade) => {
+			let _data = _.cloneDeep(data);
+			expandKeys(_data, upgrade.target).forEach((key) => {
+				assignNestedIndex(
+					data,
+					key,
+					evaluateUpgrade(_data, upgrade, key)
+				);
+			});
+		});
+	});
 	return data.player;
 }
 
@@ -228,16 +232,15 @@ function applyUpgradeBundles(_player, _data) {
 // TODO: revert to using authenticateSession + other stuff
 let admins = ["26SFR8BnWmUdbsDgAAbD6RFBlew1"];
 
-app.get("/authenticated", async (req,res) => {
-    const sessionCookie = req.cookies[SESSION_COOKIE_NAME] || "";
+app.get("/authenticated", async (req, res) => {
+	const sessionCookie = req.cookies[SESSION_COOKIE_NAME] || "";
 	admin
 		.auth()
 		.verifySessionCookie(sessionCookie, true)
 		.then((decodedClaims) => {
-            res.status(200);
+			res.status(200);
 		})
 		.catch(() => res.status(401).send("Unauthorized"));
-    
 });
 app.post("/createGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid)) {
@@ -313,8 +316,12 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 			}
 			let efficiencies = {};
 			Object.keys(gameData.availableCrops).forEach((key) => {
-                let crop = gameData.availableCrops[key];
-		        efficiencies[key] = Math.floor(Math.random()*(crop.efficiencyMax-crop.efficiencyMin+1))+crop.efficiencyMin;
+				let crop = gameData.availableCrops[key];
+				efficiencies[key] =
+					Math.floor(
+						Math.random() *
+							(crop.efficiencyMax - crop.efficiencyMin + 1)
+					) + crop.efficiencyMin;
 			});
 			await transaction.set(playerRef, {
 				crops: {},
@@ -342,7 +349,7 @@ async function nextSeason(gameDataDoc, season, gameId) {
 		let gameData = gameDataSnapshot.data();
 		players.forEach(async (doc) => {
 			let player = doc.data();
-            let upgradedPlayer = applyUpgradeBundles(player,gameData);
+			let upgradedPlayer = applyUpgradeBundles(player, gameData);
 			Object.keys(player.plot).forEach((idx) => {
 				if (player.plot[idx].type != "") {
 					player.plot[idx].stage++;
@@ -355,9 +362,15 @@ async function nextSeason(gameDataDoc, season, gameId) {
 							(1 << gameData.season > 0)
 					) {
 						if (player.plot[idx].type in player.crops) {
-							player.crops[player.plot[idx].type]+=upgradedPlayer.cropEfficiencies[player.plot[idx].type];
+							player.crops[player.plot[idx].type] +=
+								upgradedPlayer.cropEfficiencies[
+									player.plot[idx].type
+								];
 						} else {
-							player.crops[player.plot[idx].type] = upgradedPlayer.cropEfficiencies[player.plot[idx].type];
+							player.crops[player.plot[idx].type] =
+								upgradedPlayer.cropEfficiencies[
+									player.plot[idx].type
+								];
 						}
 						delete player.plot[idx];
 					}
@@ -437,9 +450,9 @@ app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 				transaction.get(playerDataDoc),
 			]);
 			let gameData = gameDataSnapshot.data();
-            if (gameData.currentRound == 0) {
-                throw new Error("The game has not started yet.");
-            }
+			if (gameData.currentRound == 0) {
+				throw new Error("The game has not started yet.");
+			}
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
@@ -571,9 +584,9 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 
 			let gameData = gameDataSnap.data();
 			let playerData = playerDataSnap.data();
-            if (gameData.currentRound == 0) {
-                throw new Error("The game has not started yet.");
-            }
+			if (gameData.currentRound == 0) {
+				throw new Error("The game has not started yet.");
+			}
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
@@ -624,8 +637,8 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 			]);
 			let gameData = gameDataSnapshot.data();
 			if (gameData.currentRound == 0) {
-                throw new Error("The game has not started yet.");
-            }
+				throw new Error("The game has not started yet.");
+			}
 			let playerData = playerDataSnapshot.data();
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
