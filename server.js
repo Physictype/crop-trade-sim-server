@@ -67,7 +67,7 @@ const SESSION_COOKIE_NAME = "session";
 
 let firestore = admin.firestore();
 
-pp.post("/sessionLogin", async (req, res) => {
+app.post("/sessionLogin", async (req, res) => {
 	const idToken = req.body.idToken;
 	console.log(
 		"Incoming sessionLogin POST. idToken:",
