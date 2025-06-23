@@ -400,6 +400,7 @@ async function nextSeason(gameDataDoc, season, gameId) {
 							.seasonsMap &
 							(1 << gameData.season > 0)
 					) {
+						console.log("WTF");
 						if (player.plot[idx].type in player.crops) {
 							player.crops[player.plot[idx].type] +=
 								upgradedPlayer.cropEfficiencies[
