@@ -227,21 +227,21 @@ function applyUpgradeBundles(_player, _data) {
 let admins = ["26SFR8BnWmUdbsDgAAbD6RFBlew1"];
 
 app.post("/createCropType", authenticateSession, async (req, res) => {
-    if (admins.includes(req.user.uid)) {
-        let data = {
+	if (admins.includes(req.user.uid)) {
+		let data = {
 			defaultEfficiencyMin: req.body.efmin,
 			defaultEfficiencyMax: req.body.efmax,
-            defaultMaxScored: req.body.max,
-            defaultMinSeasons: req.body.smin,
-            defaultPrice: req.body.price,
-            defaultSeasonsMap: req.body.smap
+			defaultMaxScored: req.body.max,
+			defaultMinSeasons: req.body.smin,
+			defaultPrice: req.body.price,
+			defaultSeasonsMap: req.body.smap,
 		};
-        await getRef(firestore, "cropData", req.body.name).set(gameData);
-        return res.status(200).send("Created");
-    } else {
-        return res.status(401).send("Unauthorized");
-    }
-})
+		await getRef(firestore, "cropData", req.body.name).set(data);
+		return res.status(200).send("Created");
+	} else {
+		return res.status(401).send("Unauthorized");
+	}
+});
 
 app.get("/authenticated", async (req, res) => {
 	const sessionCookie = req.cookies[SESSION_COOKIE_NAME] || "";
