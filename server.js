@@ -396,9 +396,9 @@ async function nextSeason(gameDataDoc, season, gameId) {
 						player.plot[idx].stage >=
 							gameData.availableCrops[player.plot[idx].type]
 								.minSeasons &&
-						gameData.availableCrops[player.plot[idx].type]
+						(gameData.availableCrops[player.plot[idx].type]
 							.seasonsMap &
-							(1 << gameData.season > 0)
+							(1 << gameData.season) > 0)
 					) {
 						console.log("WTF");
 						if (player.plot[idx].type in player.crops) {
