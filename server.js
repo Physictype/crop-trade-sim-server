@@ -225,22 +225,22 @@ function applyUpgradeBundles(_player, _data) {
 // TODO: add middleware to verify user
 // TODO: revert to using authenticateSession + other stuff
 let admins = ["26SFR8BnWmUdbsDgAAbD6RFBlew1"];
-		// fetch("https://api.crop-trade-sim.physictype.dev/createCropType", {
-		// 	method: "POST",
-		// 	credentials: "include",
-		// 	body: {
-		// 		name: "testfruit",
-		// 		efmin: 0,
-		// 		efmax: 1000,
-		// 		max: 157829381,
-		// 		smin: 1,
-		// 		price: 88888888,
-		// 		smap: 8,
-		// 	},
-		// 	headers: {
-		// 		"Content-type": "application/json; charset=UTF-8",
-		// 	},
-		// });
+// fetch("https://api.crop-trade-sim.physictype.dev/createCropType", {
+// 	method: "POST",
+// 	credentials: "include",
+// 	body: {
+// 		name: "testfruit",
+// 		efmin: 0,
+// 		efmax: 1000,
+// 		max: 157829381,
+// 		smin: 1,
+// 		price: 88888888,
+// 		smap: 8,
+// 	},
+// 	headers: {
+// 		"Content-type": "application/json; charset=UTF-8",
+// 	},
+// });
 app.post("/createCropType", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid)) {
 		let data = {
@@ -379,13 +379,21 @@ async function nextSeason(gameDataDoc, season, gameId) {
 			Object.keys(player.plot).forEach((idx) => {
 				if (player.plot[idx].type != "") {
 					player.plot[idx].stage++;
+					console.log(
+						gameData.availableCrops[player.plot[idx].type]
+							.seasonsMap,
+						1 << gameData.season,
+						gameData.availableCrops[player.plot[idx].type]
+							.seasonsMap &
+							(1 << gameData.season)
+					);
 					if (
 						player.plot[idx].stage >=
 							gameData.availableCrops[player.plot[idx].type]
 								.minSeasons &&
-						(gameData.availableCrops[player.plot[idx].type]
+						gameData.availableCrops[player.plot[idx].type]
 							.seasonsMap &
-							(1 << gameData.season) > 0)
+							(1 << gameData.season > 0)
 					) {
 						if (player.plot[idx].type in player.crops) {
 							player.crops[player.plot[idx].type] +=
