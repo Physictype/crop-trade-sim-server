@@ -425,25 +425,25 @@ async function roundLoop(gameDataDoc, gameId) {
 			gameData.endTimestamp + gameData.plantingTime * 1000;
 	}
 
-	gameDataDoc.update({
+	await gameDataDoc.update({
 		currentRound: gameData.currentRound + 1,
 		endTimestamp: currEndTimestamp,
 	});
 	setTimeout(async function () {
 		nextSeason(gameDataDoc, gameId);
 		currEndTimestamp += gameData.offeringTime * 1000;
-		gameDataDoc.update({
+		await gameDataDoc.update({
 			roundSection: "Offering",
 			endTimestamp: currEndTimestamp,
 		});
 		setTimeout(async function () {
 			currEndTimestamp += gameData.tradingTime * 1000;
-			gameDataDoc.update({
+			await gameDataDoc.update({
 				roundSection: "Trading",
 				endTimestamp: currEndTimestamp,
 			});
 			setTimeout(async function () {
-				gameDataDoc.update({ roundSection: "Planting" });
+				await gameDataDoc.update({ roundSection: "Planting" });
 				roundLoop(gameDataDoc, gameId);
 			}, currEndTimestamp - Date.now());
 		}, currEndTimestamp - Date.now());
