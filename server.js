@@ -409,7 +409,7 @@ async function nextSeason(gameDataDoc, gameId) {
 			);
 		});
 		transaction.update(gameDataDoc, {
-			season: (gameDataDoc.season + 1) % 4,
+			season: (gameData.season + 1) % 4,
 		});
 	});
 }
