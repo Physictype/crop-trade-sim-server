@@ -421,7 +421,7 @@ async function nextSeason(gameDataDoc, season, gameId) {
 				player
 			);
 		});
-        console.log("INCREASE SEASON");
+        console.log("INCREASE SEASON",season);
 		transaction.update(gameDataDoc, { season: (season + 1) % 4 });
 	});
 }
