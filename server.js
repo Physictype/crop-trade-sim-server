@@ -380,6 +380,11 @@ async function nextSeason(gameDataDoc, season, gameId) {
 				if (player.plot[idx].type != "") {
 					player.plot[idx].stage++;
 					console.log(
+						player.plot[idx].stage,
+						gameData.availableCrops[player.plot[idx].type]
+							.minSeasons
+					);
+					console.log(
 						gameData.availableCrops[player.plot[idx].type]
 							.seasonsMap,
 						1 << gameData.season,
