@@ -366,7 +366,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 	}
 });
 // TODO: FIX THIS FUNCTION BC ITS RLY JANKY
-async function nextSeason(gameDataDoc, season, gameId) {
+async function nextSeason(gameDataDoc, gameId) {
 	await firestore.runTransaction(async (transaction) => {
 		let [gameDataSnapshot, players] = await Promise.all([
 			transaction.get(gameDataDoc),
@@ -379,28 +379,15 @@ async function nextSeason(gameDataDoc, season, gameId) {
 			Object.keys(player.plot).forEach((idx) => {
 				if (player.plot[idx].type != "") {
 					player.plot[idx].stage++;
-					console.log(
-						player.plot[idx].stage,
-						gameData.availableCrops[player.plot[idx].type]
-							.minSeasons
-					);
-					console.log(
-						gameData.availableCrops[player.plot[idx].type]
-							.seasonsMap,
-						1 << gameData.season,
-						gameData.availableCrops[player.plot[idx].type]
-							.seasonsMap &
-							(1 << gameData.season)
-					);
 					if (
 						player.plot[idx].stage >=
 							gameData.availableCrops[player.plot[idx].type]
 								.minSeasons &&
-						((gameData.availableCrops[player.plot[idx].type]
+						(gameData.availableCrops[player.plot[idx].type]
 							.seasonsMap &
-							(1 << gameData.season)) > 0)
+							(1 << gameData.season)) >
+							0
 					) {
-						console.log("WTF");
 						if (player.plot[idx].type in player.crops) {
 							player.crops[player.plot[idx].type] +=
 								upgradedPlayer.cropEfficiencies[
@@ -421,8 +408,9 @@ async function nextSeason(gameDataDoc, season, gameId) {
 				player
 			);
 		});
-        console.log("INCREASE SEASON",season);
-		transaction.update(gameDataDoc, { season: (season + 1) % 4 });
+		transaction.update(gameDataDoc, {
+			season: (gameDataDoc.season + 1) % 4,
+		});
 	});
 }
 async function roundLoop(gameDataDoc, gameId) {
@@ -442,7 +430,7 @@ async function roundLoop(gameDataDoc, gameId) {
 		endTimestamp: currEndTimestamp,
 	});
 	setTimeout(async function () {
-		nextSeason(gameDataDoc, gameData.season, gameId);
+		nextSeason(gameDataDoc, gameId);
 		currEndTimestamp += gameData.offeringTime * 1000;
 		gameDataDoc.update({
 			roundSection: "Offering",
