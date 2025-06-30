@@ -811,11 +811,11 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
-			if (gameData.roundSection != "Planting") {
-				throw new Error(
-					"You may only do this during the planting phase."
-				);
-			}
+			// if (gameData.roundSection != "Planting") {
+			// 	throw new Error(
+			// 		"You may only do this during the planting phase."
+			// 	);
+			// }
 			let totalCost = Math.floor(
 				gameData.availableCrops[req.body.seed].basePrice *
 					Math.pow(req.body.count, 0.9)
