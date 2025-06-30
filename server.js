@@ -479,6 +479,7 @@ async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
     }
 }
 async function specialUpgradeLoop(gameDataDoc) {
+    console.log("what");
 	var gameData = (await gameDataDoc.get()).data();
 	setTimeout(async function () {
 		let upgrade =
