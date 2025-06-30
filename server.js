@@ -281,11 +281,16 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			plotWidth: req.body.plotWidth,
 			plotHeight: req.body.plotHeight,
 			initialMoney: req.body.initialMoney,
-			specialUpgradesEnabled: false,
+			specialUpgradesEnabled: req.body.specialUpgradesEnabled,
 			useUpgrades: [], // req.body.useUpgrades
 			roundSection: "Planting",
 			season: 0,
 		};
+		if (gameData.specialUpgradesEnabled) {
+			gameData.useUpgrades = await getRef(firestore, "upgradeBundles")
+				.get()
+				.then((snapshot) => snapshot.docs.map((doc) => doc.data()));
+		}
 		// must add checks, but for now its fine
 		async function generateGameID() {
 			// maybe change this function?
@@ -452,8 +457,8 @@ async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 	if (gameData.currentRound >= gameData.numRounds) {
 		return;
 	}
-    console.log("expected bid:", expectedBid);
-    console.log("actual bid:",gameData.specialUpgradeBundle.currentBid);
+	console.log("expected bid:", expectedBid);
+	console.log("actual bid:", gameData.specialUpgradeBundle.currentBid);
 	if (
 		gameData.specialUpgradeBundle.currentBid != expectedBid //  || Date.now() < gameData.specialUpgradeBundle.endTimestamp
 	) {
@@ -568,7 +573,7 @@ app.post(
 					},
 				});
 				setTimeout(function () {
-                    console.log("awarding?")
+					console.log("awarding?");
 					checkAndAwardUpgrade(gameDataDoc, req.body.bid);
 				}, endTimestamp - Date.now());
 			});
