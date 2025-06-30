@@ -448,38 +448,39 @@ async function roundLoop(gameDataDoc) {
 	}, currEndTimestamp - Date.now());
 }
 async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
-    let gameData = (await gameDataDoc.get()).data();
-    if (gameData.specialUpgradeBundle.currentBid != expectedBid) {
-        return;
-    }
-    await gameDataDoc.update({
-        specialUpgradeBundle: {
-            currentBid: 10000,
-            currentHolder: "",
-            endTimestamp: 0,
-            upgradeBundle: {},
-        },
-    });
-    specialUpgradeLoop();
-    if (gameData.specialUpgradeBundle.currentHolder != "") {
-        await firestore.runTransaction(async function (transaction) {
-            let playerToGive = getRef(
-                gameDataDoc,
-                "players",
-                gameData.specialUpgradeBundle.currentHolder
-            );
-            let playerData = (await transaction.get(playerToGive)).data();
-            let currentUpgrades = playerData.upgradeBundles;
-            currentUpgrades.push(upgrade);
-            await transaction.update(playerToGive, {
-                upgradeBundles: currentUpgrades,
-                money: playerData.money - gameData.specialUpgradeBundle.currentBid,
-            });
-        });
-    }
+	let gameData = (await gameDataDoc.get()).data();
+	if (gameData.specialUpgradeBundle.currentBid != expectedBid) {
+		return;
+	}
+	await gameDataDoc.update({
+		specialUpgradeBundle: {
+			currentBid: 10000,
+			currentHolder: "",
+			endTimestamp: 0,
+			upgradeBundle: {},
+		},
+	});
+	specialUpgradeLoop();
+	if (gameData.specialUpgradeBundle.currentHolder != "") {
+		await firestore.runTransaction(async function (transaction) {
+			let playerToGive = getRef(
+				gameDataDoc,
+				"players",
+				gameData.specialUpgradeBundle.currentHolder
+			);
+			let playerData = (await transaction.get(playerToGive)).data();
+			let currentUpgrades = playerData.upgradeBundles;
+			currentUpgrades.push(upgrade);
+			await transaction.update(playerToGive, {
+				upgradeBundles: currentUpgrades,
+				money:
+					playerData.money - gameData.specialUpgradeBundle.currentBid,
+			});
+		});
+	}
 }
 async function specialUpgradeLoop(gameDataDoc) {
-    console.log("what");
+	console.log("what");
 	var gameData = (await gameDataDoc.get()).data();
 	setTimeout(async function () {
 		let upgrade =
@@ -496,7 +497,7 @@ async function specialUpgradeLoop(gameDataDoc) {
 			},
 		});
 		setTimeout(async function () {
-			checkAndAwardUpgrade(gameDataDoc,10000);
+			checkAndAwardUpgrade(gameDataDoc, 10000);
 		}, specialEnd - Date.now());
 	}, Math.random() *
 		(gameData.maxSpecialUpgradeWait - gameData.minSpecialUpgradeWait) +
@@ -510,6 +511,8 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 			return res.status(409).send("Game already started.");
 		} else {
 			roundLoop(gameDataDoc);
+			console.log("HI");
+			console.log(gameDataDoc.specialUpgradesEnabled);
 			if (gameDataDoc.specialUpgradesEnabled) {
 				specialUpgradeLoop(gameDataDoc);
 			}
@@ -526,7 +529,6 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 //         let gameData = (await transaction.get(gameDataDoc)).data();
 //         let playerData = (await transaction.get(playerDoc)).data();
 
-        
 //     })
 
 // })
