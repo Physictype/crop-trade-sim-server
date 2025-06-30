@@ -452,6 +452,8 @@ async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 	if (gameData.currentRound >= gameData.numRounds) {
 		return;
 	}
+    console.log("expected bid:", expectedBid);
+    console.log("actual bid:",gameData.specialUpgradeBundle.currentBid);
 	if (
 		gameData.specialUpgradeBundle.currentBid != expectedBid //  || Date.now() < gameData.specialUpgradeBundle.endTimestamp
 	) {
@@ -566,6 +568,7 @@ app.post(
 					},
 				});
 				setTimeout(function () {
+                    console.log("awarding?")
 					checkAndAwardUpgrade(gameDataDoc, req.body.bid);
 				}, endTimestamp - Date.now());
 			});
