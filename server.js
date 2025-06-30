@@ -281,6 +281,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			plotWidth: req.body.plotWidth,
 			plotHeight: req.body.plotHeight,
 			initialMoney: req.body.initialMoney,
+			specialUpgradesEnabled: false,
 			useUpgrades: [], // req.body.useUpgrades
 			roundSection: "Planting",
 			season: 0,
@@ -366,11 +367,11 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 	}
 });
 // TODO: FIX THIS FUNCTION BC ITS RLY JANKY
-async function nextSeason(gameDataDoc, gameId) {
+async function nextSeason(gameDataDoc) {
 	await firestore.runTransaction(async (transaction) => {
 		let [gameDataSnapshot, players] = await Promise.all([
 			transaction.get(gameDataDoc),
-			transaction.get(getRef(firestore, "games", gameId, "players")),
+			transaction.get(getRef(gameDataDoc, "players")),
 		]);
 		let gameData = gameDataSnapshot.data();
 		players.forEach(async (doc) => {
@@ -403,17 +404,14 @@ async function nextSeason(gameDataDoc, gameId) {
 					}
 				}
 			});
-			transaction.update(
-				getRef(firestore, "games", gameId, "players", doc.id),
-				player
-			);
+			transaction.update(getRef(gameDataDoc, "players", doc.id), player);
 		});
 		transaction.update(gameDataDoc, {
 			season: (gameData.season + 1) % 4,
 		});
 	});
 }
-async function roundLoop(gameDataDoc, gameId) {
+async function roundLoop(gameDataDoc) {
 	var gameData = (await gameDataDoc.get()).data();
 	if (gameData.currentRound >= gameData.numRounds) {
 		return;
@@ -430,7 +428,7 @@ async function roundLoop(gameDataDoc, gameId) {
 		endTimestamp: currEndTimestamp,
 	});
 	setTimeout(async function () {
-		nextSeason(gameDataDoc, gameId);
+		nextSeason(gameDataDoc);
 		currEndTimestamp += gameData.offeringTime * 1000;
 		await gameDataDoc.update({
 			roundSection: "Offering",
@@ -444,10 +442,64 @@ async function roundLoop(gameDataDoc, gameId) {
 			});
 			setTimeout(async function () {
 				await gameDataDoc.update({ roundSection: "Planting" });
-				roundLoop(gameDataDoc, gameId);
+				roundLoop(gameDataDoc);
 			}, currEndTimestamp - Date.now());
 		}, currEndTimestamp - Date.now());
 	}, currEndTimestamp - Date.now());
+}
+async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
+    let gameData = (await gameDataDoc.get()).data();
+    if (gameData.specialUpgradeBundle.currentBid != expectedBid) {
+        return;
+    }
+    await gameDataDoc.update({
+        specialUpgradeBundle: {
+            currentBid: 10000,
+            currentHolder: "",
+            endTimestamp: 0,
+            upgradeBundle: {},
+        },
+    });
+    specialUpgradeLoop();
+    if (gameData.specialUpgradeBundle.currentHolder != "") {
+        await firestore.runTransaction(async function (transaction) {
+            let playerToGive = getRef(
+                gameDataDoc,
+                "players",
+                gameData.specialUpgradeBundle.currentHolder
+            );
+            let playerData = (await transaction.get(playerToGive)).data();
+            let currentUpgrades = playerData.upgradeBundles;
+            currentUpgrades.push(upgrade);
+            await transaction.update(playerToGive, {
+                upgradeBundles: currentUpgrades,
+                money: playerData.money - gameData.specialUpgradeBundle.currentBid,
+            });
+        });
+    }
+}
+async function specialUpgradeLoop(gameDataDoc) {
+	var gameData = (await gameDataDoc.get()).data();
+	setTimeout(async function () {
+		let upgrade =
+			gameData.useUpgrades[
+				Math.floor(Math.random() * gameData.useUpgrades.length)
+			];
+		let specialEnd = Date.now() + gameData.specialUpgradeIdle * 1000;
+		await gameDataDoc.update({
+			specialUpgradeBundle: {
+				currentBid: 10000,
+				currentHolder: "",
+				endTimestamp: specialEnd,
+				upgradeBundle: upgrade,
+			},
+		});
+		setTimeout(async function () {
+			checkAndAwardUpgrade(gameDataDoc,10000);
+		}, specialEnd - Date.now());
+	}, Math.random() *
+		(gameData.maxSpecialUpgradeWait - gameData.minSpecialUpgradeWait) +
+		gameData.minSpecialUpgradeWait);
 }
 app.post("/startGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid)) {
@@ -456,13 +508,27 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		if (gameData.currentRound > 0) {
 			return res.status(409).send("Game already started.");
 		} else {
-			roundLoop(gameDataDoc, req.body.gameId);
+			roundLoop(gameDataDoc);
+			if (gameDataDoc.specialUpgradesEnabled) {
+				specialUpgradeLoop(gameDataDoc);
+			}
 			return res.status(200).send("Game started.");
 		}
 	} else {
 		return res.status(401).send("Unauthorized");
 	}
 });
+// app.post("/specialUpgradeBid", authenticateSession, checkInGame, async (req, res) => {
+//     let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
+//     let playerDoc = await getRef(gameDataDoc,"players",req.user.uid);
+//     await firestore.runTransaction(async function (transaction) {
+//         let gameData = (await transaction.get(gameDataDoc)).data();
+//         let playerData = (await transaction.get(playerDoc)).data();
+
+        
+//     })
+
+// })
 app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 	try {
 		await firestore.runTransaction(async (transaction) => {
@@ -696,6 +762,8 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 		return res.status(409).send(e.message || "Conflict. Please try again.");
 	}
 });
+
+app.post;
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
