@@ -290,6 +290,12 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			gameData.useUpgrades = await getRef(firestore, "upgradeBundles")
 				.get()
 				.then((snapshot) => snapshot.docs.map((doc) => doc.data()));
+			gameData.specialUpgradeBundle = {
+				currentBid: 10000,
+				currentHolder: "",
+				endTimestamp: 0,
+				upgradeBundle: {},
+			};
 		}
 		// must add checks, but for now its fine
 		async function generateGameID() {
@@ -419,6 +425,9 @@ async function nextSeason(gameDataDoc) {
 async function roundLoop(gameDataDoc) {
 	var gameData = (await gameDataDoc.get()).data();
 	if (gameData.currentRound >= gameData.numRounds) {
+		await gameDataDoc.update({
+			currentRound: gameData.currentRound + 1,
+		});
 		return;
 	}
 	if (gameData.currentRound == 0) {
@@ -545,6 +554,12 @@ app.post(
 			await firestore.runTransaction(async function (transaction) {
 				let gameData = (await transaction.get(gameDataDoc)).data();
 				let playerData = (await transaction.get(playerDoc)).data();
+				if (gameData.currentRound == 0) {
+					throw new Error("The game has not started yet.");
+				}
+				if (gameData.currentRound > gameData.numRounds) {
+					throw new Error("The game has finished.");
+				}
 				if (!gameData.specialUpgradesEnabled) {
 					throw new Error("Special upgrades are not enabled.");
 				}
