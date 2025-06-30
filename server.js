@@ -453,8 +453,7 @@ async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 		return;
 	}
 	if (
-		gameData.specialUpgradeBundle.currentBid != expectedBid ||
-		Date.now() < gameData.specialUpgradeBundle.endTimestamp
+		gameData.specialUpgradeBundle.currentBid != expectedBid //  || Date.now() < gameData.specialUpgradeBundle.endTimestamp
 	) {
 		return;
 	}
@@ -566,7 +565,9 @@ app.post(
 							gameData.specialUpgradeBundle.upgradeBundle,
 					},
 				});
-				checkAndAwardUpgrade(gameDataDoc, req.body.bid);
+				setTimeout(function () {
+					checkAndAwardUpgrade(gameDataDoc, req.body.bid);
+				}, endTimestamp - Date.now());
 			});
 		} catch (e) {
 			return res
