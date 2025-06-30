@@ -449,10 +449,13 @@ async function roundLoop(gameDataDoc) {
 }
 async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 	let gameData = (await gameDataDoc.get()).data();
-    if (gameData.currentRound >= gameData.numRounds) {
-        return;
-    }
-	if (gameData.specialUpgradeBundle.currentBid != expectedBid) {
+	if (gameData.currentRound >= gameData.numRounds) {
+		return;
+	}
+	if (
+		gameData.specialUpgradeBundle.currentBid != expectedBid ||
+		Date.now() < gameData.specialUpgradeBundle.endTimestamp
+	) {
 		return;
 	}
 	await gameDataDoc.update({
@@ -525,26 +528,53 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		return res.status(401).send("Unauthorized");
 	}
 });
-app.post("/specialUpgradeBid", authenticateSession, checkInGame, async (req, res) => {
-    let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
-    let playerDoc = await getRef(gameDataDoc,"players",req.user.uid);
-    try {
-        await firestore.runTransaction(async function (transaction) {
-			let gameData = (await transaction.get(gameDataDoc)).data();
-			let playerData = (await transaction.get(playerDoc)).data();
-			if (gameData.specialUpgradesEnabled) {
-                if (gameData.specialUpgradeBundle) {
-                    
-                }
-			} else {
-                throw new Error("Special Upgrades are not enabled.");
-			}
-		});
-    } catch (e) {
-        return res.status(409).send(e.message || "Conflict. Please try again.");
-    }
-
-})
+app.post(
+	"/specialUpgradeBid",
+	authenticateSession,
+	checkInGame,
+	async (req, res) => {
+		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
+		let playerDoc = await getRef(gameDataDoc, "players", req.user.uid);
+		try {
+			await firestore.runTransaction(async function (transaction) {
+				let gameData = (await transaction.get(gameDataDoc)).data();
+				let playerData = (await transaction.get(playerDoc)).data();
+				if (!gameData.specialUpgradesEnabled) {
+					throw new Error("Special upgrades are not enabled.");
+				}
+				if (
+					Date.now() >= gameData.specialUpgradeBundle.endTimestamp ||
+					Object.keys(gameData.specialUpgradeBundle.upgradeBundle)
+						.length == 0
+				) {
+					throw new Error("There is no special upgrade active.");
+				}
+				if (req.body.bid > playerData.money) {
+					throw new Error("You do not have enough money.");
+				}
+				if (req.body.bid <= gameData.specialUpgradeBundle.currentBid) {
+					throw new Error("You must bid more than the last bid.");
+				}
+				let endTimestamp =
+					Date.now() + gameData.specialUpgradeIdle * 1000;
+				gameDataDoc.update({
+					specialUpgradeBundle: {
+						currentBid: req.body.bid,
+						currentHolder: req.user.uid,
+						endTimestamp: endTimestamp,
+						upgradeBundle:
+							gameData.specialUpgradeBundle.upgradeBundle,
+					},
+				});
+				checkAndAwardUpgrade(gameDataDoc, req.body.bid);
+			});
+		} catch (e) {
+			return res
+				.status(409)
+				.send(e.message || "Conflict. Please try again.");
+		}
+	}
+);
 app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 	try {
 		await firestore.runTransaction(async (transaction) => {
