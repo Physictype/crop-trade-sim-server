@@ -287,6 +287,9 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			season: 0,
 		};
 		if (gameData.specialUpgradesEnabled) {
+            gameData.specialUpgradeIdle = 10;
+            gameData.minSpecialUpgradeWait = 5;
+            gameData.maxSpecialUpgradeWait = 10;
 			gameData.useUpgrades = await getRef(firestore, "upgradeBundles")
 				.get()
 				.then((snapshot) => snapshot.docs.map((doc) => doc.data()));
