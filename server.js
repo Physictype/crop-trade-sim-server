@@ -449,6 +449,9 @@ async function roundLoop(gameDataDoc) {
 }
 async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 	let gameData = (await gameDataDoc.get()).data();
+    if (gameData.currentRound >= gameData.numRounds) {
+        return;
+    }
 	if (gameData.specialUpgradeBundle.currentBid != expectedBid) {
 		return;
 	}
@@ -522,16 +525,26 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		return res.status(401).send("Unauthorized");
 	}
 });
-// app.post("/specialUpgradeBid", authenticateSession, checkInGame, async (req, res) => {
-//     let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
-//     let playerDoc = await getRef(gameDataDoc,"players",req.user.uid);
-//     await firestore.runTransaction(async function (transaction) {
-//         let gameData = (await transaction.get(gameDataDoc)).data();
-//         let playerData = (await transaction.get(playerDoc)).data();
+app.post("/specialUpgradeBid", authenticateSession, checkInGame, async (req, res) => {
+    let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
+    let playerDoc = await getRef(gameDataDoc,"players",req.user.uid);
+    try {
+        await firestore.runTransaction(async function (transaction) {
+			let gameData = (await transaction.get(gameDataDoc)).data();
+			let playerData = (await transaction.get(playerDoc)).data();
+			if (gameData.specialUpgradesEnabled) {
+                if (gameData.specialUpgradeBundle) {
+                    
+                }
+			} else {
+                throw new Error("Special Upgrades are not enabled.");
+			}
+		});
+    } catch (e) {
+        return res.status(409).send(e.message || "Conflict. Please try again.");
+    }
 
-//     })
-
-// })
+})
 app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 	try {
 		await firestore.runTransaction(async (transaction) => {
