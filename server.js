@@ -460,7 +460,7 @@ async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 			upgradeBundle: {},
 		},
 	});
-	specialUpgradeLoop();
+	specialUpgradeLoop(gameDataDoc);
 	if (gameData.specialUpgradeBundle.currentHolder != "") {
 		await firestore.runTransaction(async function (transaction) {
 			let playerToGive = getRef(
