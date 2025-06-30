@@ -512,8 +512,8 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		} else {
 			roundLoop(gameDataDoc);
 			console.log("HI");
-			console.log(gameDataDoc.specialUpgradesEnabled);
-			if (gameDataDoc.specialUpgradesEnabled) {
+			console.log(gameData.specialUpgradesEnabled);
+			if (gameData.specialUpgradesEnabled) {
 				specialUpgradeLoop(gameDataDoc);
 			}
 			return res.status(200).send("Game started.");
