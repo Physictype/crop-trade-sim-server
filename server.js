@@ -470,7 +470,7 @@ async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 			);
 			let playerData = (await transaction.get(playerToGive)).data();
 			let currentUpgrades = playerData.upgradeBundles;
-			currentUpgrades.push(upgrade);
+			currentUpgrades.push(gameData.specialUpgradeBundle.upgradeBundle);
 			await transaction.update(playerToGive, {
 				upgradeBundles: currentUpgrades,
 				money:
