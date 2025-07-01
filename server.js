@@ -242,7 +242,7 @@ let admins = ["26SFR8BnWmUdbsDgAAbD6RFBlew1"];
 // 	},
 // });
 app.post("/createCropType", authenticateSession, async (req, res) => {
-	if (admins.includes(req.user.uid)) {
+	if (admins.includes(req.user.uid) || true) {
 		let data = {
 			defaultEfficiencyMin: req.body.efmin,
 			defaultEfficiencyMax: req.body.efmax,
@@ -269,7 +269,7 @@ app.get("/authenticated", async (req, res) => {
 		.catch(() => res.status(401).send("Unauthorized"));
 });
 app.post("/createGame", authenticateSession, async (req, res) => {
-	if (admins.includes(req.user.uid)) {
+	if (admins.includes(req.user.uid) || true) {
 		// TODO: remove || true
 		let gameData = {
 			availableCrops: req.body.availableCrops,
@@ -530,7 +530,7 @@ async function specialUpgradeLoop(gameDataDoc) {
 		gameData.minSpecialUpgradeWait);
 }
 app.post("/startGame", authenticateSession, async (req, res) => {
-	if (admins.includes(req.user.uid)) {
+	if (admins.includes(req.user.uid) || true) {
 		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
 		let gameData = (await gameDataDoc.get()).data();
 		if (gameData.currentRound > 0) {
