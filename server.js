@@ -780,16 +780,17 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 				req.body.idx < 0 ||
 				req.body.idx >=
 					upgradedPlayer.plotWidth * upgradedPlayer.plotHeight
-			)
-				// if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
-				// 	throw new Error("Planting out of range.");
-				// }
-				transaction.update(playerDataDoc, {
-					[`seeds.${req.body.seed}`]:
-						playerData.seeds[req.body.seed] - 1,
-					[`plot.${req.body.idx}.stage`]: 0,
-					[`plot.${req.body.idx}.type`]: req.body.seed,
-				});
+			) {
+				throw new Error("Planting out of range.");
+			}
+			// if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
+			//
+			// }
+			transaction.update(playerDataDoc, {
+				[`seeds.${req.body.seed}`]: playerData.seeds[req.body.seed] - 1,
+				[`plot.${req.body.idx}.stage`]: 0,
+				[`plot.${req.body.idx}.type`]: req.body.seed,
+			});
 		});
 		return res.status(200).send("Seed planted.");
 	} catch (e) {
