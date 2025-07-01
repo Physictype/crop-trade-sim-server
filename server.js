@@ -287,9 +287,9 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			season: 0,
 		};
 		if (gameData.specialUpgradesEnabled) {
-            gameData.specialUpgradeIdle = 10;
-            gameData.minSpecialUpgradeWait = 5;
-            gameData.maxSpecialUpgradeWait = 10;
+			gameData.specialUpgradeIdle = 10;
+			gameData.minSpecialUpgradeWait = 5;
+			gameData.maxSpecialUpgradeWait = 10;
 			gameData.useUpgrades = await getRef(firestore, "upgradeBundles")
 				.get()
 				.then((snapshot) => snapshot.docs.map((doc) => doc.data()));
@@ -373,6 +373,8 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				offers: {},
 				cropEfficiencies: efficiencies,
 				upgradeBundles: [],
+				plotWidth: gameData.plotWidth,
+				plotHeight: gameData.plotHeight,
 			});
 		});
 		return res.status(200).send("Game joined.");
@@ -752,6 +754,7 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 
 			let gameData = gameDataSnap.data();
 			let playerData = playerDataSnap.data();
+			let upgradedPlayer = applyUpgradeBundles(playerData, gameData);
 			if (gameData.currentRound == 0) {
 				throw new Error("The game has not started yet.");
 			}
@@ -773,14 +776,20 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 			if (!Object.keys(gameData.availableCrops).includes(req.body.seed)) {
 				throw new Error("That crop isn't in play.");
 			}
-			// if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
-			// 	throw new Error("Planting out of range.");
-			// }
-			transaction.update(playerDataDoc, {
-				[`seeds.${req.body.seed}`]: playerData.seeds[req.body.seed] - 1,
-				[`plot.${req.body.idx}.stage`]: 0,
-				[`plot.${req.body.idx}.type`]: req.body.seed,
-			});
+			if (
+				req.body.idx < 0 ||
+				req.body.idx >=
+					upgradedPlayer.plotWidth * upgradedPlayer.plotHeight
+			)
+				// if (req.body.idx < 0 || req.body.idx >= playerData.plot.length) {
+				// 	throw new Error("Planting out of range.");
+				// }
+				transaction.update(playerDataDoc, {
+					[`seeds.${req.body.seed}`]:
+						playerData.seeds[req.body.seed] - 1,
+					[`plot.${req.body.idx}.stage`]: 0,
+					[`plot.${req.body.idx}.type`]: req.body.seed,
+				});
 		});
 		return res.status(200).send("Seed planted.");
 	} catch (e) {
