@@ -424,7 +424,7 @@ async function nextSeason(gameDataDoc) {
 				}
 			});
 			player.utility = 0;
-			gameData.availableCrops.forEach((crop) => {
+			Object.keys(gameData.availableCrops).forEach((crop) => {
 				player.utility += cropUtilityFunction(
 					uto0(player.crops[crop]),
 					gameData.availableCrops[crop].maxScored
@@ -722,7 +722,7 @@ app.post(
 				}
 				let thisUtility = 0;
 				let otherUtility = 0;
-				gameData.availableCrops.forEach((crop) => {
+				Object.keys(gameData.availableCrops).forEach((crop) => {
 					thisUtility += cropUtilityFunction(
 						uto0(playerData.crops[crop]),
 						gameData.availableCrops[crop].maxScored
