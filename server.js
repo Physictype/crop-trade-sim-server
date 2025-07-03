@@ -221,6 +221,12 @@ function applyUpgradeBundles(_player, _data) {
 	return data.player;
 }
 
+function cropUtilityFunction(num, max) {
+	return (
+		(((max + max - Math.max(num, max) + 1) * num) / (max * (max + 1))) * 100
+	);
+}
+
 // TODO: add checks so no injects especially for NaNs
 // TODO: add middleware to verify user
 // TODO: revert to using authenticateSession + other stuff
@@ -375,6 +381,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				upgradeBundles: [],
 				plotWidth: gameData.plotWidth,
 				plotHeight: gameData.plotHeight,
+				utility: 0,
 			});
 		});
 		return res.status(200).send("Game joined.");
@@ -392,7 +399,7 @@ async function nextSeason(gameDataDoc) {
 		let gameData = gameDataSnapshot.data();
 		players.forEach(async (doc) => {
 			let player = doc.data();
-			let upgradedPlayer = applyUpgradeBundles(player, gameData);
+			// let upgradedPlayer = applyUpgradeBundles(player, gameData);
 			Object.keys(player.plot).forEach((idx) => {
 				if (player.plot[idx].type != "") {
 					player.plot[idx].stage++;
@@ -407,18 +414,21 @@ async function nextSeason(gameDataDoc) {
 					) {
 						if (player.plot[idx].type in player.crops) {
 							player.crops[player.plot[idx].type] +=
-								upgradedPlayer.cropEfficiencies[
-									player.plot[idx].type
-								];
+								player.cropEfficiencies[player.plot[idx].type];
 						} else {
 							player.crops[player.plot[idx].type] =
-								upgradedPlayer.cropEfficiencies[
-									player.plot[idx].type
-								];
+								player.cropEfficiencies[player.plot[idx].type];
 						}
 						delete player.plot[idx];
 					}
 				}
+			});
+			player.utility = 0;
+			gameData.availableCrops.forEach((crop) => {
+				player.utility += cropUtilityFunction(
+					uto0(player.crops[crop]),
+					gameData.availableCrops[crop].maxScored
+				);
 			});
 			transaction.update(getRef(gameDataDoc, "players", doc.id), player);
 		});
@@ -710,12 +720,25 @@ app.post(
 						"That is more than the other player is offering."
 					);
 				}
+				let thisUtility = 0;
+				let otherUtility = 0;
+				gameData.availableCrops.forEach((crop) => {
+					thisUtility += cropUtilityFunction(
+						uto0(playerData.crops[crop]),
+						gameData.availableCrops[crop].maxScored
+					);
+					otherUtility += cropUtilityFunction(
+						uto0(otherData.crops[crop]),
+						gameData.availableCrops[crop].maxScored
+					);
+				});
 				transaction.update(playerDataDoc, {
 					money:
 						playerData.money -
 						req.body.num * otherData.offers[req.body.type].pricePer,
 					[`crops.${req.body.type}`]:
 						uto0(playerData.crops[req.body.type]) + req.body.num,
+					utility: thisUtility,
 				});
 				transaction.update(otherDataDoc, {
 					money:
@@ -725,6 +748,7 @@ app.post(
 						otherData.crops[req.body.type] - req.body.num,
 					[`offers.${req.body.type}.num`]:
 						otherData.offers[req.body.type].num - req.body.num,
+					utility: otherUtility,
 				});
 			});
 			return res.status(200).send("Trade completed.");
@@ -754,7 +778,7 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 
 			let gameData = gameDataSnap.data();
 			let playerData = playerDataSnap.data();
-			let upgradedPlayer = applyUpgradeBundles(playerData, gameData);
+			// let upgradedPlayer = applyUpgradeBundles(playerData, gameData);
 			if (gameData.currentRound == 0) {
 				throw new Error("The game has not started yet.");
 			}
@@ -778,8 +802,7 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 			}
 			if (
 				req.body.idx < 0 ||
-				req.body.idx >=
-					upgradedPlayer.plotWidth * upgradedPlayer.plotHeight
+				req.body.idx >= player.plotWidth * player.plotHeight
 			) {
 				throw new Error("Planting out of range.");
 			}
