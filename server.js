@@ -802,7 +802,7 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 			}
 			if (
 				req.body.idx < 0 ||
-				req.body.idx >= player.plotWidth * player.plotHeight
+				req.body.idx >= playerData.plotWidth * playerData.plotHeight
 			) {
 				throw new Error("Planting out of range.");
 			}
