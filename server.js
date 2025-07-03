@@ -281,7 +281,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			plotWidth: req.body.plotWidth,
 			plotHeight: req.body.plotHeight,
 			initialMoney: req.body.initialMoney,
-			specialUpgradesEnabled: req.body.specialUpgradesEnabled,
+			specialUpgradesEnabled: false, //req.body.specialUpgradesEnabled,
 			useUpgrades: [], // req.body.useUpgrades
 			roundSection: "Planting",
 			season: 0,
