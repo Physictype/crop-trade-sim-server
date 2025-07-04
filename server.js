@@ -492,8 +492,6 @@ async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 	if (gameData.currentRound >= gameData.numRounds) {
 		return;
 	}
-	console.log("expected bid:", expectedBid);
-	console.log("actual bid:", gameData.specialUpgradeBundle.currentBid);
 	if (
 		gameData.specialUpgradeBundle.currentBid != expectedBid //  || Date.now() < gameData.specialUpgradeBundle.endTimestamp
 	) {
@@ -527,7 +525,6 @@ async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 	}
 }
 async function specialUpgradeLoop(gameDataDoc) {
-	console.log("what");
 	var gameData = (await gameDataDoc.get()).data();
 	setTimeout(async function () {
 		let upgrade =
@@ -558,8 +555,6 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 			return res.status(409).send("Game already started.");
 		} else {
 			roundLoop(gameDataDoc);
-			console.log("HI");
-			console.log(gameData.specialUpgradesEnabled);
 			if (gameData.specialUpgradesEnabled) {
 				specialUpgradeLoop(gameDataDoc);
 			}
@@ -614,7 +609,6 @@ app.post(
 					},
 				});
 				setTimeout(function () {
-					console.log("awarding?");
 					checkAndAwardUpgrade(gameDataDoc, req.body.bid);
 				}, endTimestamp - Date.now());
 			});
@@ -888,7 +882,6 @@ async function startBlend(
 	playerDoc,
 	zeroBlendTime // reorder
 ) {
-    console.log("this has to run");
 	let gameData = (await gameDoc.get()).data();
 	if (gameData.currentRound > gameData.numRounds) {
 		return;
@@ -898,7 +891,6 @@ async function startBlend(
 		endTimestamp = Date.now();
 	}
 	blenderDoc.update({ endTimestamp: endTimestamp });
-    console.log("are we stupid", endTimestamp);
 	setTimeout(function () {
 		firestore.runTransaction(async (transaction) => {
 			let [playerData, blenderData] = (
@@ -933,7 +925,6 @@ async function startBlend(
 					zeroBlendTime
 				);
 			}
-			console.log("blend finished");
 		});
 	}, endTimestamp - Date.now());
 }
@@ -966,17 +957,16 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 				])
 			).map((snapshot) => snapshot.data());
 
-			// if (gameData.currentRound == 0) {
-			// 	throw new Error("The game has not started yet.");
-			// }
-			// if (gameData.currentRound > gameData.numRounds) {
-			//     throw new Error("The game has already ended.");
-			// }
+			if (gameData.currentRound == 0) {
+				throw new Error("The game has not started yet.");
+			}
+			if (gameData.currentRound > gameData.numRounds) {
+			    throw new Error("The game has already ended.");
+			}
 
 			if (recipeData.time * req.body.count > 180) {
 				throw new Error("That would take too long to craft.");
 			}
-			console.log(playerData.money, recipeData.cost, req.body.count);
 			if (playerData.money < recipeData.cost * req.body.count) {
 				throw new Error("You do not have enough money to blend that.");
 			}
