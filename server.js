@@ -962,12 +962,12 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 				])
 			).map((snapshot) => snapshot.data());
 
-            if (gameData.currentRound == 0) {
-				throw new Error("The game has not started yet.");
-			}
-            if (gameData.currentRound > gameData.numRounds) {
-                throw new Error("The game has already ended.");
-            }
+            // if (gameData.currentRound == 0) {
+			// 	throw new Error("The game has not started yet.");
+			// }
+            // if (gameData.currentRound > gameData.numRounds) {
+            //     throw new Error("The game has already ended.");
+            // }
 
 			if (recipeData.time * req.body.count > 180) {
 				throw new Error("That would take too long to craft.");
