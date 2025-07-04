@@ -881,16 +881,16 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 });
 
 async function startBlend(
-    gameDoc,
+	gameDoc,
 	blenderDoc,
 	recipeCount,
 	recipeData,
-	playerDoc,
+	playerDoc
 ) {
-    let gameData = (await gameDoc.get()).data();
-    if (gameData.currentRound > gameData.numRounds) {
-        return;
-    }
+	let gameData = (await gameDoc.get()).data();
+	if (gameData.currentRound > gameData.numRounds) {
+		return;
+	}
 	let endTimestamp = Date.now() + recipeData.time * recipeCount * 1000;
 	if (zeroBlendTime) {
 		endTimestamp = Date.now();
@@ -916,7 +916,7 @@ async function startBlend(
 			});
 			if (blenderData.queuedBlends.length > 0) {
 				startBlend(
-                    gameDoc,
+					gameDoc,
 					blenderDoc,
 					blenderData.queuedBlends[0].count,
 					await transaction.get(
@@ -936,7 +936,7 @@ async function startBlend(
 
 app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 	try {
-		firestore.runTransaction(async function (transaction) {
+		await firestore.runTransaction(async function (transaction) {
 			let gameDoc = getRef(
 				firestore,
 				"games",
@@ -962,12 +962,12 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 				])
 			).map((snapshot) => snapshot.data());
 
-            // if (gameData.currentRound == 0) {
+			// if (gameData.currentRound == 0) {
 			// 	throw new Error("The game has not started yet.");
 			// }
-            // if (gameData.currentRound > gameData.numRounds) {
-            //     throw new Error("The game has already ended.");
-            // }
+			// if (gameData.currentRound > gameData.numRounds) {
+			//     throw new Error("The game has already ended.");
+			// }
 
 			if (recipeData.time * req.body.count > 180) {
 				throw new Error("That would take too long to craft.");
@@ -1007,7 +1007,7 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 
 			if (blenderData.queuedBlends.length == 1) {
 				startBlend(
-                    gameDoc,
+					gameDoc,
 					blenderDoc,
 					req.body.count,
 					recipeData,
@@ -1016,6 +1016,7 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 				);
 			}
 		});
+		return res.status(200).send("Blend queued.");
 	} catch (e) {
 		return res.status(409).send(e.message || "Conflict. Please try again.");
 	}
