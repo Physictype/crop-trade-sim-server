@@ -972,6 +972,7 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 			if (recipeData.time * req.body.count > 180) {
 				throw new Error("That would take too long to craft.");
 			}
+			console.log(playerData.money, recipeData.cost, req.body.count);
 			if (playerData.money < recipeData.cost * req.body.count) {
 				throw new Error("You do not have enough money to blend that.");
 			}
