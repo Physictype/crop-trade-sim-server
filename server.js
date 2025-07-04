@@ -888,6 +888,7 @@ async function startBlend(
 	playerDoc,
 	zeroBlendTime // reorder
 ) {
+    console.log("this has to run");
 	let gameData = (await gameDoc.get()).data();
 	if (gameData.currentRound > gameData.numRounds) {
 		return;
@@ -897,6 +898,7 @@ async function startBlend(
 		endTimestamp = Date.now();
 	}
 	blenderDoc.update({ endTimestamp: endTimestamp });
+    console.log("are we stupid", endTimestamp);
 	setTimeout(function () {
 		firestore.runTransaction(async (transaction) => {
 			let [playerData, blenderData] = (
