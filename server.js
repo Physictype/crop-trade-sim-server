@@ -886,7 +886,7 @@ async function startBlend(
 	recipeCount,
 	recipeData,
 	playerDoc,
-    zeroBlendTime // reorder
+	zeroBlendTime // reorder
 ) {
 	let gameData = (await gameDoc.get()).data();
 	if (gameData.currentRound > gameData.numRounds) {
@@ -931,6 +931,7 @@ async function startBlend(
 					zeroBlendTime
 				);
 			}
+			console.log("blend finished");
 		});
 	}, endTimestamp - Date.now());
 }
