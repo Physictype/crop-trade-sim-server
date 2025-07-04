@@ -906,7 +906,7 @@ async function startBlend(
 					transaction.get(playerDoc),
 					transaction.get(blenderDoc),
 				])
-			).data();
+			).map(snapshot => snapshot.data());
 			recipeData.results.forEach((result) => {
 				playerData.crops[result.name] =
 					uto0(playerData.crops[result.name]) +
