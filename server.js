@@ -16,7 +16,13 @@ export const admin = firebaseAdmin.initializeApp({
 		client_email: process.env.FIREBASE_CLIENT_EMAIL,
 	}),
 });
-import { doc, collection, updateDoc, getDocs } from "firebase/firestore";
+import {
+	doc,
+	collection,
+	updateDoc,
+	getDocs,
+	runTransaction,
+} from "firebase/firestore";
 import cors from "cors";
 import _ from "lodash";
 // import { getDoc } from "firebase";
@@ -291,6 +297,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			useUpgrades: [], // req.body.useUpgrades
 			roundSection: "Planting",
 			season: 0,
+			zeroBlendTime: true,
 		};
 		if (gameData.specialUpgradesEnabled) {
 			gameData.specialUpgradeIdle = 10;
@@ -382,6 +389,10 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				plotWidth: gameData.plotWidth,
 				plotHeight: gameData.plotHeight,
 				utility: 0,
+			});
+			await transaction.set(getRef(playerRef, "blenders", "0"), {
+				endTimestamp: 0,
+				queuedBlends: [],
 			});
 		});
 		return res.status(200).send("Game joined.");
@@ -869,7 +880,146 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 	}
 });
 
-app.post;
+async function startBlend(
+    gameDoc,
+	blenderDoc,
+	recipeCount,
+	recipeData,
+	playerDoc,
+) {
+    let gameData = (await gameDoc.get()).data();
+    if (gameData.currentRound > gameData.numRounds) {
+        return;
+    }
+	let endTimestamp = Date.now() + recipeData.time * recipeCount * 1000;
+	if (zeroBlendTime) {
+		endTimestamp = Date.now();
+	}
+	blenderDoc.update({ endTimestamp: endTimestamp });
+	setTimeout(function () {
+		firestore.runTransaction(async (transaction) => {
+			let [playerData, blenderData] = (
+				await Promise.all([
+					transaction.get(playerDoc),
+					transaction.get(blenderDoc),
+				])
+			).data();
+			recipeData.results.forEach((result) => {
+				playerData.crops[result.name] =
+					uto0(playerData.crops[result.name]) +
+					result.count * recipeCount;
+			});
+			transaction.update(playerDoc, { crop: playerData });
+			blenderData.queuedBlends = blenderData.queuedBlends.slice(1);
+			transaction.update(blenderDoc, {
+				queuedBlends: blenderData.queuedBlends,
+			});
+			if (blenderData.queuedBlends.length > 0) {
+				startBlend(
+                    gameDoc,
+					blenderDoc,
+					blenderData.queuedBlends[0].count,
+					await transaction.get(
+						getRef(
+							firestore,
+							"recipes",
+							blenderData.queuedBlends[0].recipeId
+						)
+					),
+					playerDoc,
+					zeroBlendTime
+				);
+			}
+		});
+	}, endTimestamp - Date.now());
+}
+
+app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
+	try {
+		firestore.runTransaction(async function (transaction) {
+			let gameDoc = getRef(
+				firestore,
+				"games",
+				req.body.gameId.toString()
+			);
+			let playerDoc = getRef(gameDoc, "players", req.user.uid.toString());
+			let blenderDoc = getRef(
+				playerDoc,
+				"blenders",
+				req.body.blenderId.toString()
+			);
+			let recipeDoc = getRef(
+				firestore,
+				"recipes",
+				req.body.recipeId.toString()
+			);
+			let [gameData, playerData, blenderData, recipeData] = (
+				await Promise.all([
+					transaction.get(gameDoc),
+					transaction.get(playerDoc),
+					transaction.get(blenderDoc),
+					transaction.get(recipeDoc),
+				])
+			).map((snapshot) => snapshot.data());
+
+            if (gameData.currentRound == 0) {
+				throw new Error("The game has not started yet.");
+			}
+            if (gameData.currentRound > gameData.numRounds) {
+                throw new Error("The game has already ended.");
+            }
+
+			if (recipeData.time * req.body.count > 180) {
+				throw new Error("That would take too long to craft.");
+			}
+			if (playerData.money < recipeData.cost * req.body.count) {
+				throw new Error("You do not have enough money to blend that.");
+			}
+
+			playerData.money -= recipeData.cost * req.body.count;
+
+			recipeData.ingredients.forEach((ingredient) => {
+				if (
+					playerData.crops[ingredient.name] <
+					ingredient.count * req.body.count
+				) {
+					throw new Error(
+						"You do not have enough ingredients to blend that."
+					);
+				}
+				playerData.crops[ingredient.name] -= ingredient.count *=
+					req.body.count;
+			});
+
+			blenderData.queuedBlends.push({
+				recipeId: req.body.recipeId.toString(),
+				count: req.body.count,
+			});
+
+			transaction.update(playerDoc, {
+				crops: playerData.crops,
+				money: playerData.money,
+			});
+
+			transaction.update(blenderDoc, {
+				queuedBlends: blenderData.queuedBlends,
+			});
+
+			if (blenderData.queuedBlends.length == 1) {
+				startBlend(
+                    gameDoc,
+					blenderDoc,
+					req.body.count,
+					recipeData,
+					playerDoc,
+					gameData.zeroBlendTime
+				);
+			}
+		});
+	} catch (e) {
+		return res.status(409).send(e.message || "Conflict. Please try again.");
+	}
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
