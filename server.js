@@ -885,7 +885,8 @@ async function startBlend(
 	blenderDoc,
 	recipeCount,
 	recipeData,
-	playerDoc
+	playerDoc,
+    zeroBlendTime // reorder
 ) {
 	let gameData = (await gameDoc.get()).data();
 	if (gameData.currentRound > gameData.numRounds) {
