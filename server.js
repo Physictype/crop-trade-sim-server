@@ -912,7 +912,7 @@ async function startBlend(
 					uto0(playerData.crops[result.name]) +
 					result.count * recipeCount;
 			});
-			transaction.update(playerDoc, { crop: playerData });
+			transaction.update(playerDoc, { crops: playerData.crops });
 			blenderData.queuedBlends = blenderData.queuedBlends.slice(1);
 			transaction.update(blenderDoc, {
 				queuedBlends: blenderData.queuedBlends,
