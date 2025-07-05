@@ -229,7 +229,7 @@ function applyUpgradeBundles(_player, _data) {
 
 function cropUtilityFunction(num, max) {
 	return (
-		(((max + max - Math.max(num, max) + 1) * num) / (max * (max + 1))) * 100
+		(((max + max - Math.min(num, max) + 1) * num) / (max * (max + 1))) * 100
 	);
 }
 
