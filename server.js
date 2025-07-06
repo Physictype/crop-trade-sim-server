@@ -898,7 +898,7 @@ async function startBlend(
 					transaction.get(playerDoc),
 					transaction.get(blenderDoc),
 				])
-			).map(snapshot => snapshot.data());
+			).map((snapshot) => snapshot.data());
 			recipeData.results.forEach((result) => {
 				playerData.crops[result.name] =
 					uto0(playerData.crops[result.name]) +
@@ -957,11 +957,11 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 				])
 			).map((snapshot) => snapshot.data());
 
-			if (gameData.currentRound == 0) {
-				throw new Error("The game has not started yet.");
-			}
+			// if (gameData.currentRound == 0) {
+			// 	throw new Error("The game has not started yet.");
+			// }
 			if (gameData.currentRound > gameData.numRounds) {
-			    throw new Error("The game has already ended.");
+				throw new Error("The game has already ended.");
 			}
 
 			if (recipeData.time * req.body.count > 180) {
@@ -982,8 +982,8 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 						"You do not have enough ingredients to blend that."
 					);
 				}
-				playerData.crops[ingredient.name] -= ingredient.count *=
-					req.body.count;
+				playerData.crops[ingredient.name] -=
+					ingredient.count * req.body.count;
 			});
 
 			blenderData.queuedBlends.push({
