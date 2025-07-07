@@ -441,7 +441,7 @@ async function nextSeason(gameDataDoc) {
 			player.utility = 0;
 			Object.keys(gameData.availableProducts).forEach((product) => {
 				player.utility += productUtilityFunction(
-					uto0(player.products[products]),
+					uto0(player.products[product]),
 					gameData.availableProducts[product].maxScored
 				);
 			});
