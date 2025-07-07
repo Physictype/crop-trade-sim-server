@@ -227,7 +227,7 @@ function applyUpgradeBundles(_player, _data) {
 	return data.player;
 }
 
-function cropUtilityFunction(num, max) {
+function productUtilityFunction(num, max) {
 	return (
 		(((max + max - Math.min(num, max) + 1) * num) / (max * (max + 1))) * 100
 	);
@@ -253,17 +253,20 @@ let admins = ["26SFR8BnWmUdbsDgAAbD6RFBlew1"];
 // 		"Content-type": "application/json; charset=UTF-8",
 // 	},
 // });
-app.post("/createCropType", authenticateSession, async (req, res) => {
-	if (admins.includes(req.user.uid) || true) {
+app.post("/createProductType", authenticateSession, async (req, res) => {
+	if (admins.includes(req.user.uid)) {
 		let data = {
-			defaultEfficiencyMin: req.body.efmin,
-			defaultEfficiencyMax: req.body.efmax,
+			isCrop: req.body.isCrop,
 			defaultMaxScored: req.body.max,
-			defaultMinSeasons: req.body.smin,
-			defaultPrice: req.body.price,
-			defaultSeasonsMap: req.body.smap,
 		};
-		await getRef(firestore, "cropData", req.body.name).set(data);
+		if (req.body.isCrop) {
+			data.defaultEfficiencyMin = req.body.efmin;
+			data.defaultEfficiencyMax = req.body.efmax;
+			data.defaultMinSeasons = req.body.smin;
+			data.defaultPrice = req.body.price;
+			data.defaultSeasonsMap = req.body.smap;
+		}
+		await getRef(firestore, "productData", req.body.name).set(data);
 		return res.status(200).send("Created");
 	} else {
 		return res.status(401).send("Unauthorized");
@@ -284,7 +287,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid) || true) {
 		// TODO: remove || true
 		let gameData = {
-			availableCrops: req.body.availableCrops,
+			availableProducts: req.body.availableProducts,
 			currentRound: 0,
 			numRounds: req.body.numRounds,
 			plantingTime: req.body.plantingTime,
@@ -369,16 +372,17 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				throw new Error("You have already joined the game.");
 			}
 			let efficiencies = {};
-			Object.keys(gameData.availableCrops).forEach((key) => {
-				let crop = gameData.availableCrops[key];
+			Object.keys(gameData.availableProducts).forEach((key) => {
+				let product = gameData.availableProducts[key];
+				if (!product.isCrop) return;
 				efficiencies[key] =
 					Math.floor(
 						Math.random() *
-							(crop.efficiencyMax - crop.efficiencyMin + 1)
-					) + crop.efficiencyMin;
+							(product.efficiencyMax - product.efficiencyMin + 1)
+					) + product.efficiencyMin;
 			});
 			await transaction.set(playerRef, {
-				crops: {},
+				products: {},
 				money: gameData.initialMoney,
 				plot: {},
 				seeds: {},
@@ -416,18 +420,18 @@ async function nextSeason(gameDataDoc) {
 					player.plot[idx].stage++;
 					if (
 						player.plot[idx].stage >=
-							gameData.availableCrops[player.plot[idx].type]
+							gameData.availableProducts[player.plot[idx].type]
 								.minSeasons &&
-						(gameData.availableCrops[player.plot[idx].type]
+						(gameData.availableProducts[player.plot[idx].type]
 							.seasonsMap &
 							(1 << gameData.season)) >
 							0
 					) {
-						if (player.plot[idx].type in player.crops) {
-							player.crops[player.plot[idx].type] +=
+						if (player.plot[idx].type in player.products) {
+							player.products[player.plot[idx].type] +=
 								player.cropEfficiencies[player.plot[idx].type];
 						} else {
-							player.crops[player.plot[idx].type] =
+							player.products[player.plot[idx].type] =
 								player.cropEfficiencies[player.plot[idx].type];
 						}
 						delete player.plot[idx];
@@ -435,10 +439,10 @@ async function nextSeason(gameDataDoc) {
 				}
 			});
 			player.utility = 0;
-			Object.keys(gameData.availableCrops).forEach((crop) => {
-				player.utility += cropUtilityFunction(
-					uto0(player.crops[crop]),
-					gameData.availableCrops[crop].maxScored
+			Object.keys(gameData.availableProducts).forEach((product) => {
+				player.utility += productUtilityFunction(
+					uto0(player.products[products]),
+					gameData.availableProducts[product].maxScored
 				);
 			});
 			transaction.update(getRef(gameDataDoc, "players", doc.id), player);
@@ -619,7 +623,7 @@ app.post(
 		}
 	}
 );
-app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
+app.post("/offerProduct", authenticateSession, checkInGame, async (req, res) => {
 	try {
 		await firestore.runTransaction(async (transaction) => {
 			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
@@ -647,23 +651,23 @@ app.post("/offerCrop", authenticateSession, checkInGame, async (req, res) => {
 				);
 			}
 			let playerData = playerDataSnapshot.data();
-			playerData.offers[req.body.crop] = {
+			playerData.offers[req.body.product] = {
 				num: parseInt(req.body.num) || 0,
 				pricePer: parseInt(req.body.price) || 0,
 			};
 			if (
 				!(
-					playerData.offers[req.body.crop].num <=
-					playerData.crops[req.body.crop]
+					playerData.offers[req.body.product].num <=
+					playerData.products[req.body.product]
 				)
 			) {
 				throw new Error(
-					"You are trying to offer more crops than you have."
+					"You are trying to offer more products than you have."
 				);
 			}
 			playerDataDoc.update(playerData);
 		});
-		return res.status(200).send("Crop offered.");
+		return res.status(200).send("Product offered.");
 	} catch (e) {
 		return res.status(409).send(e.message || "Conflict. Please try again.");
 	}
@@ -677,7 +681,7 @@ app.post(
 			await firestore.runTransaction(async (transaction) => {
 				req.body.num = parseInt(req.body.num) || 0;
 				if (req.body.num <= 0) {
-					throw new Error("Invalid number of crops to trade.");
+					throw new Error("Invalid number of products to trade.");
 				}
 				let gameDataDoc = getRef(firestore, "games", req.body.gameId);
 				let playerDataDoc = await getRef(
@@ -727,30 +731,30 @@ app.post(
 				}
 				let thisUtility = 0;
 				let otherUtility = 0;
-				Object.keys(gameData.availableCrops).forEach((crop) => {
-					thisUtility += cropUtilityFunction(
-						uto0(playerData.crops[crop]),
-						gameData.availableCrops[crop].maxScored
+				Object.keys(gameData.availableProducts).forEach((product) => {
+					thisUtility += productUtilityFunction(
+						uto0(playerData.products[product]),
+						gameData.availableProducts[product].maxScored
 					);
-					otherUtility += cropUtilityFunction(
-						uto0(otherData.crops[crop]),
-						gameData.availableCrops[crop].maxScored
+					otherUtility += productUtilityFunction(
+						uto0(otherData.products[product]),
+						gameData.availableProducts[product].maxScored
 					);
 				});
 				transaction.update(playerDataDoc, {
 					money:
 						playerData.money -
 						req.body.num * otherData.offers[req.body.type].pricePer,
-					[`crops.${req.body.type}`]:
-						uto0(playerData.crops[req.body.type]) + req.body.num,
+					[`products.${req.body.type}`]:
+						uto0(playerData.products[req.body.type]) + req.body.num,
 					utility: thisUtility,
 				});
 				transaction.update(otherDataDoc, {
 					money:
 						otherData.money +
 						req.body.num * otherData.offers[req.body.type].pricePer,
-					[`crops.${req.body.type}`]:
-						otherData.crops[req.body.type] - req.body.num,
+					[`products.${req.body.type}`]:
+						otherData.products[req.body.type] - req.body.num,
 					[`offers.${req.body.type}.num`]:
 						otherData.offers[req.body.type].num - req.body.num,
 					utility: otherUtility,
@@ -802,9 +806,12 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 			) {
 				throw new Error("Insufficient Seeds.");
 			}
-			if (!Object.keys(gameData.availableCrops).includes(req.body.seed)) {
+			if (!Object.keys(gameData.availableProducts).includes(req.body.seed)) {
 				throw new Error("That crop isn't in play.");
 			}
+            if (!gameData.availableProducts[req.body.seed].isCrop) {
+                throw new Error("That is not a crop.");
+            }
 			if (
 				req.body.idx < 0 ||
 				req.body.idx >= playerData.plotWidth * playerData.plotHeight
@@ -849,13 +856,19 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
+            if (!Object.keys(gameData.availableProducts).includes(req.body.seed)) {
+                throw new Error("That crop is not in play.");
+            }
+            if (!gameData.availableProducts[req.body.seed].isCrop) {
+                throw new Error("That is not a crop.");
+            }
 			// if (gameData.roundSection != "Planting") {
 			// 	throw new Error(
 			// 		"You may only do this during the planting phase."
 			// 	);
 			// }
 			let totalCost = Math.floor(
-				gameData.availableCrops[req.body.seed].basePrice *
+				gameData.availableProducts[req.body.seed].basePrice *
 					Math.pow(req.body.count, 0.9)
 			);
 			if (totalCost > playerData.money) {
@@ -900,11 +913,11 @@ async function startBlend(
 				])
 			).map((snapshot) => snapshot.data());
 			recipeData.results.forEach((result) => {
-				playerData.crops[result.name] =
-					uto0(playerData.crops[result.name]) +
+				playerData.products[result.name] =
+					uto0(playerData.products[result.name]) +
 					result.count * recipeCount;
 			});
-			transaction.update(playerDoc, { crops: playerData.crops });
+			transaction.update(playerDoc, { products: playerData.products });
 			blenderData.queuedBlends = blenderData.queuedBlends.slice(1);
 			transaction.update(blenderDoc, {
 				queuedBlends: blenderData.queuedBlends,
@@ -975,14 +988,14 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 
 			recipeData.ingredients.forEach((ingredient) => {
 				if (
-					playerData.crops[ingredient.name] <
+					playerData.products[ingredient.name] <
 					ingredient.count * req.body.count
 				) {
 					throw new Error(
 						"You do not have enough ingredients to blend that."
 					);
 				}
-				playerData.crops[ingredient.name] -=
+				playerData.products[ingredient.name] -=
 					ingredient.count * req.body.count;
 			});
 
@@ -992,7 +1005,7 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 			});
 
 			transaction.update(playerDoc, {
-				crops: playerData.crops,
+				products: playerData.products,
 				money: playerData.money,
 			});
 
