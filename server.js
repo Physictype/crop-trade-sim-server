@@ -900,9 +900,9 @@ async function startBlend(
 		return;
 	}
 	let endTimestamp = Date.now() + recipeData.time * recipeCount * 1000;
-	if (zeroBlendTime) {
-		endTimestamp = Date.now();
-	}
+	// if (zeroBlendTime) {
+	// 	endTimestamp = Date.now();
+	// }
 	blenderDoc.update({ endTimestamp: endTimestamp });
 	setTimeout(function () {
 		firestore.runTransaction(async (transaction) => {
