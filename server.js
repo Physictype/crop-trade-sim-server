@@ -300,7 +300,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			useUpgrades: [], // req.body.useUpgrades
 			roundSection: "Planting",
 			season: 0,
-			zeroBlendTime: true,
+			zeroBlendTime: false,
 		};
 		if (gameData.specialUpgradesEnabled) {
 			gameData.specialUpgradeIdle = 10;
@@ -988,7 +988,7 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 
 			recipeData.ingredients.forEach((ingredient) => {
 				if (
-					playerData.products[ingredient.name] <
+					uto0(playerData.products[ingredient.name]) <
 					ingredient.count * req.body.count
 				) {
 					throw new Error(
