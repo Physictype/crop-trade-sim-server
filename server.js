@@ -996,7 +996,7 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 				throw new Error("The game has already ended.");
 			}
 
-			if (recipeData.time * req.body.count > 180) {
+			if (recipeData.time * req.body.count > 1800) {
 				throw new Error("That would take too long to craft.");
 			}
 			if (playerData.money < recipeData.cost * req.body.count) {
