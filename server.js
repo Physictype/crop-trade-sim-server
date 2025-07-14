@@ -1077,10 +1077,10 @@ app.post("/buyBlender", authenticateSession, checkInGame, async (req, res) => {
 				throw new Error("Insufficient Currency");
 			}
 			let numBlenders = (
-				await transaction.get(getRef(playerRef, "blenders"))
+				await transaction.get(getRef(playerDataDoc, "blenders"))
 			).docs.length;
 			await transaction.set(
-				getRef(playerRef, "blenders", numBlenders.toString()),
+				getRef(playerDataDoc, "blenders", numBlenders.toString()),
 				{
 					endTimestamp: 0,
 					queuedBlends: [],
