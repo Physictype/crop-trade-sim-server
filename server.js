@@ -1072,13 +1072,14 @@ app.post("/buyBlender", authenticateSession, checkInGame, async (req, res) => {
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
-			let totalCost = 0;
-			if (totalCost > playerData.money) {
-				throw new Error("Insufficient Currency");
-			}
 			let numBlenders = (
 				await transaction.get(getRef(playerDataDoc, "blenders"))
 			).docs.length;
+            // TODO: create options for this
+			let totalCost = 20000 * Math.pow(15, numBlenders);
+			if (totalCost > playerData.money) {
+				throw new Error("Insufficient Currency");
+			}
 			await transaction.set(
 				getRef(playerDataDoc, "blenders", numBlenders.toString()),
 				{
