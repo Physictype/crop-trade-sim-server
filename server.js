@@ -396,10 +396,6 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				plotHeight: gameData.plotHeight,
 				utility: 0,
 			});
-			await transaction.set(getRef(playerRef, "blenders", "0"), {
-				endTimestamp: 0,
-				queuedBlends: [],
-			});
 		});
 		return res.status(200).send("Game joined.");
 	} catch (e) {
@@ -1048,6 +1044,53 @@ app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 			}
 		});
 		return res.status(200).send("Blend queued.");
+	} catch (e) {
+		return res.status(409).send(e.message || "Conflict. Please try again.");
+	}
+});
+
+app.post("/buyBlender", authenticateSession, checkInGame, async (req, res) => {
+	try {
+		await firestore.runTransaction(async (transaction) => {
+			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
+			let playerDataDoc = getRef(
+				firestore,
+				"games",
+				req.body.gameId.toString(),
+				"players",
+				req.user.uid.toString()
+			);
+			let [gameDataSnapshot, playerDataSnapshot] = await Promise.all([
+				transaction.get(gameDataDoc),
+				transaction.get(playerDataDoc),
+			]);
+			let gameData = gameDataSnapshot.data();
+			if (gameData.currentRound == 0) {
+				throw new Error("The game has not started yet.");
+			}
+			let playerData = playerDataSnapshot.data();
+			if (gameData.currentRound > gameData.numRounds) {
+				throw new Error("The game has ended.");
+			}
+			let totalCost = 0;
+			if (totalCost > playerData.money) {
+				throw new Error("Insufficient Currency");
+			}
+			let numBlenders = (
+				await transaction.get(getRef(playerRef, "blenders"))
+			).docs.length;
+			await transaction.set(
+				getRef(playerRef, "blenders", numBlenders.toString()),
+				{
+					endTimestamp: 0,
+					queuedBlends: [],
+				}
+			);
+			transaction.update(playerDataDoc, {
+				money: playerData.money - totalCost,
+			});
+		});
+		return res.status(200).send("Blender bought.");
 	} catch (e) {
 		return res.status(409).send(e.message || "Conflict. Please try again.");
 	}
