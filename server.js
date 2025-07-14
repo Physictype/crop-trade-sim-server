@@ -229,7 +229,9 @@ function applyUpgradeBundles(_player, _data) {
 
 function productUtilityFunction(num, max) {
 	return (
-		(((max + max - Math.min(num, max) + 1) * num) / (max * (max + 1))) * 100
+		(((max + max - Math.min(num, max) + 1) * Math.min(num, max)) /
+			(max * (max + 1))) *
+		100
 	);
 }
 
@@ -623,55 +625,62 @@ app.post(
 		}
 	}
 );
-app.post("/offerProduct", authenticateSession, checkInGame, async (req, res) => {
-	try {
-		await firestore.runTransaction(async (transaction) => {
-			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
-			let playerDataDoc = getRef(
-				firestore,
-				"games",
-				req.body.gameId.toString(),
-				"players",
-				req.user.uid.toString()
-			);
-			let [gameDataSnapshot, playerDataSnapshot] = await Promise.all([
-				transaction.get(gameDataDoc),
-				transaction.get(playerDataDoc),
-			]);
-			let gameData = gameDataSnapshot.data();
-			if (gameData.currentRound == 0) {
-				throw new Error("The game has not started yet.");
-			}
-			if (gameData.currentRound > gameData.numRounds) {
-				throw new Error("The game has ended.");
-			}
-			if (gameData.roundSection != "Offering") {
-				throw new Error(
-					"You may only do this during the offering phase."
+app.post(
+	"/offerProduct",
+	authenticateSession,
+	checkInGame,
+	async (req, res) => {
+		try {
+			await firestore.runTransaction(async (transaction) => {
+				let gameDataDoc = getRef(firestore, "games", req.body.gameId);
+				let playerDataDoc = getRef(
+					firestore,
+					"games",
+					req.body.gameId.toString(),
+					"players",
+					req.user.uid.toString()
 				);
-			}
-			let playerData = playerDataSnapshot.data();
-			playerData.offers[req.body.product] = {
-				num: parseInt(req.body.num) || 0,
-				pricePer: parseInt(req.body.price) || 0,
-			};
-			if (
-				!(
-					playerData.offers[req.body.product].num <=
-					playerData.products[req.body.product]
-				)
-			) {
-				throw new Error(
-					"You are trying to offer more products than you have."
-				);
-			}
-			playerDataDoc.update(playerData);
-		});
-		return res.status(200).send("Product offered.");
-	} catch (e) {
-		return res.status(409).send(e.message || "Conflict. Please try again.");
+				let [gameDataSnapshot, playerDataSnapshot] = await Promise.all([
+					transaction.get(gameDataDoc),
+					transaction.get(playerDataDoc),
+				]);
+				let gameData = gameDataSnapshot.data();
+				if (gameData.currentRound == 0) {
+					throw new Error("The game has not started yet.");
+				}
+				if (gameData.currentRound > gameData.numRounds) {
+					throw new Error("The game has ended.");
+				}
+				if (gameData.roundSection != "Offering") {
+					throw new Error(
+						"You may only do this during the offering phase."
+					);
+				}
+				let playerData = playerDataSnapshot.data();
+				playerData.offers[req.body.product] = {
+					num: parseInt(req.body.num) || 0,
+					pricePer: parseInt(req.body.price) || 0,
+				};
+				if (
+					!(
+						playerData.offers[req.body.product].num <=
+						playerData.products[req.body.product]
+					)
+				) {
+					throw new Error(
+						"You are trying to offer more products than you have."
+					);
+				}
+				playerDataDoc.update(playerData);
+			});
+			return res.status(200).send("Product offered.");
+		} catch (e) {
+			return res
+				.status(409)
+				.send(e.message || "Conflict. Please try again.");
+		}
 	}
-});
+);
 app.post(
 	"/tradeFromOffer",
 	authenticateSession,
@@ -806,12 +815,14 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 			) {
 				throw new Error("Insufficient Seeds.");
 			}
-			if (!Object.keys(gameData.availableProducts).includes(req.body.seed)) {
+			if (
+				!Object.keys(gameData.availableProducts).includes(req.body.seed)
+			) {
 				throw new Error("That crop isn't in play.");
 			}
-            if (!gameData.availableProducts[req.body.seed].isCrop) {
-                throw new Error("That is not a crop.");
-            }
+			if (!gameData.availableProducts[req.body.seed].isCrop) {
+				throw new Error("That is not a crop.");
+			}
 			if (
 				req.body.idx < 0 ||
 				req.body.idx >= playerData.plotWidth * playerData.plotHeight
@@ -856,12 +867,14 @@ app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 			if (gameData.currentRound > gameData.numRounds) {
 				throw new Error("The game has ended.");
 			}
-            if (!Object.keys(gameData.availableProducts).includes(req.body.seed)) {
-                throw new Error("That crop is not in play.");
-            }
-            if (!gameData.availableProducts[req.body.seed].isCrop) {
-                throw new Error("That is not a crop.");
-            }
+			if (
+				!Object.keys(gameData.availableProducts).includes(req.body.seed)
+			) {
+				throw new Error("That crop is not in play.");
+			}
+			if (!gameData.availableProducts[req.body.seed].isCrop) {
+				throw new Error("That is not a crop.");
+			}
 			// if (gameData.roundSection != "Planting") {
 			// 	throw new Error(
 			// 		"You may only do this during the planting phase."
@@ -917,7 +930,17 @@ async function startBlend(
 					uto0(playerData.products[result.name]) +
 					result.count * recipeCount;
 			});
-			transaction.update(playerDoc, { products: playerData.products });
+			playerData.utility = 0;
+			Object.keys(gameData.availableProducts).forEach((product) => {
+				playerData.utility += productUtilityFunction(
+					uto0(playerData.products[product]),
+					gameData.availableProducts[product].maxScored
+				);
+			});
+			transaction.update(playerDoc, {
+				products: playerData.products,
+				utility: playerData.utility,
+			});
 			blenderData.queuedBlends = blenderData.queuedBlends.slice(1);
 			transaction.update(blenderDoc, {
 				queuedBlends: blenderData.queuedBlends,
