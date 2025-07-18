@@ -303,6 +303,8 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			roundSection: "Planting",
 			season: 0,
 			zeroBlendTime: false,
+            initialBlenderCost: req.body.initialBlenderCost,
+            blenderCostRate: req.body.blenderCostRate,
 		};
 		if (gameData.specialUpgradesEnabled) {
 			gameData.specialUpgradeIdle = 10;
@@ -1076,7 +1078,7 @@ app.post("/buyBlender", authenticateSession, checkInGame, async (req, res) => {
 				await transaction.get(getRef(playerDataDoc, "blenders"))
 			).docs.length;
             // TODO: create options for this
-			let totalCost = 20000 * Math.pow(15, numBlenders);
+			let totalCost = gameData.initialBlenderCost * Math.pow(gameData.blenderCostRate, numBlenders);
 			if (totalCost > playerData.money) {
 				throw new Error("Insufficient Currency");
 			}
