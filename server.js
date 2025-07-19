@@ -227,12 +227,31 @@ function applyUpgradeBundles(_player, _data) {
 	return data.player;
 }
 
-function productUtilityFunction(num, max) {
-	return (
-		(((max + max - Math.min(num, max) + 1) * Math.min(num, max)) /
-			(max * (max + 1))) *
-		100
-	);
+function productUtilityDelta(num, max, type) {
+	if (type == "linear") {
+		return max - num + 1;
+	} else if (type == "hyperbolic") {
+		return max / num;
+	} else {
+		//if (type == "constant") {
+		return 1;
+	}
+}
+
+function productUtilityFunction(num, max, type) {
+	let res = 0;
+	for (let i = 1; i <= num; i++) {
+		res += productUtilityDelta(num, max, type);
+	}
+	return res;
+}
+function moneyUtilityFunction(money,type) {
+    if (type == "linear") {
+        return money;
+    } else {
+        // if (type == "logarithmic")
+        return Math.log(money);
+    }
 }
 
 // TODO: add checks so no injects especially for NaNs
@@ -303,8 +322,8 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			roundSection: "Planting",
 			season: 0,
 			zeroBlendTime: false,
-            initialBlenderCost: req.body.initialBlenderCost,
-            blenderCostRate: req.body.blenderCostRate,
+			initialBlenderCost: req.body.initialBlenderCost,
+			blenderCostRate: req.body.blenderCostRate,
 		};
 		if (gameData.specialUpgradesEnabled) {
 			gameData.specialUpgradeIdle = 10;
@@ -440,11 +459,23 @@ async function nextSeason(gameDataDoc) {
 			});
 			player.utility = 0;
 			Object.keys(gameData.availableProducts).forEach((product) => {
-				player.utility += productUtilityFunction(
+				let part = productUtilityFunction(
 					uto0(player.products[product]),
-					gameData.availableProducts[product].maxScored
+					gameData.availableProducts[product].maxScored,
+					gameData.productUtilityDecay
 				);
+				if (gameData.normalizeProductUtility) {
+					part /= productUtilityFunction(
+						gameData.availableProducts[product].maxScored,
+						gameData.availableProducts[product].maxScored,
+						gameData.productUtilityDecay
+					);
+                    part *= 100;
+				}
+                player.utility += part;
 			});
+            player.utility *= gameData.productWeight;
+            player.utility += moneyUtilityFunction(player.money,gameData.moneyUtilityFunction) * gameData.moneyWeight;
 			transaction.update(getRef(gameDataDoc, "players", doc.id), player);
 		});
 		transaction.update(gameDataDoc, {
@@ -1077,8 +1108,10 @@ app.post("/buyBlender", authenticateSession, checkInGame, async (req, res) => {
 			let numBlenders = (
 				await transaction.get(getRef(playerDataDoc, "blenders"))
 			).docs.length;
-            // TODO: create options for this
-			let totalCost = gameData.initialBlenderCost * Math.pow(gameData.blenderCostRate, numBlenders);
+			// TODO: create options for this
+			let totalCost =
+				gameData.initialBlenderCost *
+				Math.pow(gameData.blenderCostRate, numBlenders);
 			if (totalCost > playerData.money) {
 				throw new Error("Insufficient Currency");
 			}
