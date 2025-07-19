@@ -353,7 +353,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			productUtilityDecay: req.body.productUtilityDecay,
 			moneyWeight: req.body.moneyWeight,
 			moneyUtilityFunction: req.body.moneyUtilityFunction,
-			startUtility:
+			initialUtility:
 				req.body.moneyWeight *
 				moneyUtilityFunction(
 					req.body.initialMoney,
@@ -450,7 +450,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				upgradeBundles: [],
 				plotWidth: gameData.plotWidth,
 				plotHeight: gameData.plotHeight,
-				utility: 0,
+				utility: gameData.initialUtility,
 			});
 		});
 		return res.status(200).send("Game joined.");
