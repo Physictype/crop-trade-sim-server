@@ -253,6 +253,30 @@ function moneyUtilityFunction(money,type) {
         return Math.log(money);
     }
 }
+function calculateUtility(playerData, gameData) {
+    let utility = 0;
+    Object.keys(gameData.availableProducts).forEach((product) => {
+        let part = productUtilityFunction(
+            uto0(playerData.products[product]),
+            gameData.availableProducts[product].maxScored,
+            gameData.productUtilityDecay
+        );
+        if (gameData.normalizeProductUtility) {
+            part /= productUtilityFunction(
+                gameData.availableProducts[product].maxScored,
+                gameData.availableProducts[product].maxScored,
+                gameData.productUtilityDecay
+            );
+            part *= 100;
+        }
+        utility += part;
+    });
+    utility *= gameData.productWeight;
+    utility +=
+        moneyUtilityFunction(playerData.money, gameData.moneyUtilityFunction) *
+        gameData.moneyWeight;
+    return utility;
+}
 
 // TODO: add checks so no injects especially for NaNs
 // TODO: add middleware to verify user
@@ -324,6 +348,11 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			zeroBlendTime: false,
 			initialBlenderCost: req.body.initialBlenderCost,
 			blenderCostRate: req.body.blenderCostRate,
+			productWeight: req.body.productWeight,
+			normalizeProductUtility: req.body.normalizeProductUtility,
+			productUtilityDecay: req.body.productUtilityDecay,
+			moneyWeight: req.body.moneyWeight,
+			moneyUtilityFunction: req.body.moneyUtilityFunction,
 		};
 		if (gameData.specialUpgradesEnabled) {
 			gameData.specialUpgradeIdle = 10;
@@ -457,25 +486,7 @@ async function nextSeason(gameDataDoc) {
 					}
 				}
 			});
-			player.utility = 0;
-			Object.keys(gameData.availableProducts).forEach((product) => {
-				let part = productUtilityFunction(
-					uto0(player.products[product]),
-					gameData.availableProducts[product].maxScored,
-					gameData.productUtilityDecay
-				);
-				if (gameData.normalizeProductUtility) {
-					part /= productUtilityFunction(
-						gameData.availableProducts[product].maxScored,
-						gameData.availableProducts[product].maxScored,
-						gameData.productUtilityDecay
-					);
-                    part *= 100;
-				}
-                player.utility += part;
-			});
-            player.utility *= gameData.productWeight;
-            player.utility += moneyUtilityFunction(player.money,gameData.moneyUtilityFunction) * gameData.moneyWeight;
+			player.utility = calculateUtility(player,gameData);
 			transaction.update(getRef(gameDataDoc, "players", doc.id), player);
 		});
 		transaction.update(gameDataDoc, {
@@ -767,18 +778,8 @@ app.post(
 						"That is more than the other player is offering."
 					);
 				}
-				let thisUtility = 0;
-				let otherUtility = 0;
-				Object.keys(gameData.availableProducts).forEach((product) => {
-					thisUtility += productUtilityFunction(
-						uto0(playerData.products[product]),
-						gameData.availableProducts[product].maxScored
-					);
-					otherUtility += productUtilityFunction(
-						uto0(otherData.products[product]),
-						gameData.availableProducts[product].maxScored
-					);
-				});
+				let thisUtility = calculateUtility(playerData,gameData);
+				let otherUtility = calculateUtility(otherData,gameData);
 				transaction.update(playerDataDoc, {
 					money:
 						playerData.money -
@@ -959,13 +960,7 @@ async function startBlend(
 					uto0(playerData.products[result.name]) +
 					result.count * recipeCount;
 			});
-			playerData.utility = 0;
-			Object.keys(gameData.availableProducts).forEach((product) => {
-				playerData.utility += productUtilityFunction(
-					uto0(playerData.products[product]),
-					gameData.availableProducts[product].maxScored
-				);
-			});
+			playerData.utility = calculateUtility(playerData,gameData);
 			transaction.update(playerDoc, {
 				products: playerData.products,
 				utility: playerData.utility,
