@@ -245,37 +245,37 @@ function productUtilityFunction(num, max, type) {
 	}
 	return res;
 }
-function moneyUtilityFunction(money,type) {
-    if (type == "linear") {
-        return money;
-    } else {
-        // if (type == "logarithmic")
-        return Math.log(money);
-    }
+function moneyUtilityFunction(money, type) {
+	if (type == "linear") {
+		return money;
+	} else {
+		// if (type == "logarithmic")
+		return Math.log(money);
+	}
 }
 function calculateUtility(playerData, gameData) {
-    let utility = 0;
-    Object.keys(gameData.availableProducts).forEach((product) => {
-        let part = productUtilityFunction(
-            uto0(playerData.products[product]),
-            gameData.availableProducts[product].maxScored,
-            gameData.productUtilityDecay
-        );
-        if (gameData.normalizeProductUtility) {
-            part /= productUtilityFunction(
-                gameData.availableProducts[product].maxScored,
-                gameData.availableProducts[product].maxScored,
-                gameData.productUtilityDecay
-            );
-            part *= 100;
-        }
-        utility += part;
-    });
-    utility *= gameData.productWeight;
-    utility +=
-        moneyUtilityFunction(playerData.money, gameData.moneyUtilityFunction) *
-        gameData.moneyWeight;
-    return utility;
+	let utility = 0;
+	Object.keys(gameData.availableProducts).forEach((product) => {
+		let part = productUtilityFunction(
+			uto0(playerData.products[product]),
+			gameData.availableProducts[product].maxScored,
+			gameData.productUtilityDecay
+		);
+		if (gameData.normalizeProductUtility) {
+			part /= productUtilityFunction(
+				gameData.availableProducts[product].maxScored,
+				gameData.availableProducts[product].maxScored,
+				gameData.productUtilityDecay
+			);
+			part *= 100;
+		}
+		utility += part;
+	});
+	utility *= gameData.productWeight;
+	utility +=
+		moneyUtilityFunction(playerData.money, gameData.moneyUtilityFunction) *
+		gameData.moneyWeight;
+	return utility;
 }
 
 // TODO: add checks so no injects especially for NaNs
@@ -353,6 +353,12 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			productUtilityDecay: req.body.productUtilityDecay,
 			moneyWeight: req.body.moneyWeight,
 			moneyUtilityFunction: req.body.moneyUtilityFunction,
+			startUtility:
+				req.body.moneyWeight *
+				moneyUtilityFunction(
+					req.body.initialMoney,
+					req.body.moneyUtilityFunction
+				),
 		};
 		if (gameData.specialUpgradesEnabled) {
 			gameData.specialUpgradeIdle = 10;
@@ -486,7 +492,7 @@ async function nextSeason(gameDataDoc) {
 					}
 				}
 			});
-			player.utility = calculateUtility(player,gameData);
+			player.utility = calculateUtility(player, gameData);
 			transaction.update(getRef(gameDataDoc, "players", doc.id), player);
 		});
 		transaction.update(gameDataDoc, {
@@ -778,8 +784,8 @@ app.post(
 						"That is more than the other player is offering."
 					);
 				}
-				let thisUtility = calculateUtility(playerData,gameData);
-				let otherUtility = calculateUtility(otherData,gameData);
+				let thisUtility = calculateUtility(playerData, gameData);
+				let otherUtility = calculateUtility(otherData, gameData);
 				transaction.update(playerDataDoc, {
 					money:
 						playerData.money -
@@ -960,7 +966,7 @@ async function startBlend(
 					uto0(playerData.products[result.name]) +
 					result.count * recipeCount;
 			});
-			playerData.utility = calculateUtility(playerData,gameData);
+			playerData.utility = calculateUtility(playerData, gameData);
 			transaction.update(playerDoc, {
 				products: playerData.products,
 				utility: playerData.utility,
