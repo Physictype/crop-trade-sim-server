@@ -240,7 +240,7 @@ function productUtilityDelta(num, max, type) {
 
 function productUtilityFunction(num, max, type) {
 	let res = 0;
-	for (let i = 1; i <= min(num,max); i++) {
+	for (let i = 1; i <= Math.min(num, max); i++) {
 		res += productUtilityDelta(i, max, type);
 	}
 	return res;
@@ -360,16 +360,20 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 					req.body.moneyUtilityFunction
 				),
 		};
-        let tooManyProducts = false;
-        gameData.availableProducts.forEach((product) => {
-            if (tooManyProducts) return;
-            if (product.maxScored > 25000) {
-                tooManyProducts = true;
-            }
-        })
-        if (tooManyProducts) {
-            return res.status(409).send("The maximum scored number of one of your products is too big.");
-        }
+		let tooManyProducts = false;
+		gameData.availableProducts.forEach((product) => {
+			if (tooManyProducts) return;
+			if (product.maxScored > 25000) {
+				tooManyProducts = true;
+			}
+		});
+		if (tooManyProducts) {
+			return res
+				.status(409)
+				.send(
+					"The maximum scored number of one of your products is too big."
+				);
+		}
 		if (gameData.specialUpgradesEnabled) {
 			gameData.specialUpgradeIdle = 10;
 			gameData.minSpecialUpgradeWait = 5;
