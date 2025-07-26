@@ -362,9 +362,9 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 				),
 		};
 		let tooManyProducts = false;
-		gameData.availableProducts.forEach((product) => {
+		Object.keys(gameData.availableProducts).forEach((product) => {
 			if (tooManyProducts) return;
-			if (product.maxScored > 25000) {
+			if (gameData.availableProducts[product].maxScored > 25000) {
 				tooManyProducts = true;
 			}
 		});
