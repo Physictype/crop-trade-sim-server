@@ -332,6 +332,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid) || true) {
 		// TODO: remove || true
 		let gameData = {
+			host: req.user.uid,
 			availableProducts: req.body.availableProducts,
 			currentRound: 0,
 			numRounds: req.body.numRounds,
@@ -617,6 +618,9 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid) || true) {
 		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
 		let gameData = (await gameDataDoc.get()).data();
+		if (gameData.host != req.user.uid) {
+			return res.status(409).send("You are not the host of this game.");
+		}
 		if (gameData.currentRound > 0) {
 			return res.status(409).send("Game already started.");
 		} else {
