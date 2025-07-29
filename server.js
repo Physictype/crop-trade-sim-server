@@ -293,7 +293,7 @@ function checkObjectStructure(obj, structure) {
 		if (obj[key] == NaN) {
 			works = false;
 		}
-		works &&= (getType(obj[key]) == structure[key]);
+		works &&= getType(obj[key]) == structure[key];
 	});
 	Object.keys(obj).forEach((key) => {
 		works &&= Object.keys(structure).includes(key);
@@ -561,6 +561,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 		});
 		return res.status(200).send("Game joined.");
 	} catch (e) {
+		console.log(e);
 		return res.status(409).send(e.message || "Conflict. Please try again.");
 	}
 });
