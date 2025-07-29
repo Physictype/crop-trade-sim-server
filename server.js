@@ -525,15 +525,14 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				transaction.get(gameDataDoc),
 				transaction.get(playerRef),
 			]);
-			console.log(gameDataSnapshot);
-			if (!gameDataSnapshot.exists()) {
+			let gameData = gameDataSnapshot.data();
+			if (gameData == null) {
 				throw new Error("Game does not exist.");
 			}
-			let gameData = gameDataSnapshot.data();
 			if (gameData.currentRound != 0) {
 				throw new Error("Game already started.");
 			}
-			if (playerSnapshot.exists()) {
+			if (playerSnapshot.data() != null) {
 				throw new Error("You have already joined the game.");
 			}
 			let efficiencies = {};
@@ -714,10 +713,10 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		}
 		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
 		let gameDataSnapshot = await gameDataDoc.get();
-		if (!gameDataSnapshot.exists()) {
+		let gameData = gameDataSnapshot.data();
+		if (gameData == null) {
 			return res.status(409).send("Game does not exist.");
 		}
-		let gameData = gameDataSnapshot.data();
 		if (gameData.host != req.user.uid) {
 			return res.status(409).send("You are not the host of this game.");
 		}
