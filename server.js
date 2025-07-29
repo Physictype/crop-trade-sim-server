@@ -278,6 +278,29 @@ function calculateUtility(playerData, gameData) {
 	return utility;
 }
 
+function getType(obj) {
+	Object.prototype.toString
+		.call(obj)
+		.split(" ")[1]
+		.split("]")[0]
+		.toLowerCase();
+}
+
+function checkObjectStructure(obj, structure) {
+	if (getType(obj) != "object") return false;
+	let works = true;
+	Object.keys(structure).forEach((key) => {
+		if (obj[key] == NaN) {
+			works = false;
+		}
+		works &= getType(obj[key]) == structure[key];
+	});
+	Object.keys(obj).forEach((key) => {
+		works &= Object.keys(structure).includes(key);
+	});
+	return works;
+}
+
 // TODO: add checks so no injects especially for NaNs
 // TODO: add middleware to verify user
 // TODO: revert to using authenticateSession + other stuff
@@ -328,39 +351,102 @@ app.get("/authenticated", async (req, res) => {
 		})
 		.catch(() => res.status(401).send("Unauthorized"));
 });
+
+let gameStructure = {
+	availableProducts: "array",
+	numRounds: "number",
+	plantingTime: "number",
+	offeringTime: "number",
+	tradingTime: "number",
+	plotWidth: "number",
+	plotHeight: "number",
+	initialMoney: "number",
+	initialBlenderCost: "number",
+	blenderCostRate: "number",
+	productWeight: "number",
+	normalizeProductUtility: "boolean",
+	productUtilityDecay: "string",
+	moneyWeight: "number",
+	moneyUtilityFunction: "string",
+};
+let productStructure = {
+	isCrop: "boolean",
+	maxScored: "number",
+};
+let cropStructure = {
+	basePrice: "number",
+	efficiencyMax: "number",
+	efficiencyMin: "number",
+	isCrop: "boolean",
+	maxScored: "number",
+	minSeasons: "number",
+	seasonsMap: "number",
+};
+let offeringStructure = {
+	gameId: "string",
+	product: "string",
+	num: "number",
+	price: "number",
+};
+let tradeStructure = {
+	gameId: "string",
+	targetId: "string",
+	product: "string",
+	num: "number",
+};
+let plantStructure = {
+	gameId: "string",
+	seed: "string",
+	idx: "number",
+};
+let buySeedStructure = {
+	gameId: "string",
+	seed: "string",
+	count: "number",
+};
+let blendStructure = {
+	gameId: "string",
+	blenderId: "number",
+	recipeId: "string",
+	count: "number",
+};
+
 app.post("/createGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid) || true) {
 		// TODO: remove || true
-		let gameData = {
-			host: req.user.uid,
-			availableProducts: req.body.availableProducts,
-			currentRound: 0,
-			numRounds: req.body.numRounds,
-			plantingTime: req.body.plantingTime,
-			offeringTime: req.body.offeringTime,
-			tradingTime: req.body.tradingTime,
-			plotWidth: req.body.plotWidth,
-			plotHeight: req.body.plotHeight,
-			initialMoney: req.body.initialMoney,
-			specialUpgradesEnabled: false, //req.body.specialUpgradesEnabled,
-			useUpgrades: [], // req.body.useUpgrades
-			roundSection: "Planting",
-			season: 0,
-			zeroBlendTime: false,
-			initialBlenderCost: req.body.initialBlenderCost,
-			blenderCostRate: req.body.blenderCostRate,
-			productWeight: req.body.productWeight,
-			normalizeProductUtility: req.body.normalizeProductUtility,
-			productUtilityDecay: req.body.productUtilityDecay,
-			moneyWeight: req.body.moneyWeight,
-			moneyUtilityFunction: req.body.moneyUtilityFunction,
-			initialUtility:
-				req.body.moneyWeight *
-				moneyUtilityFunction(
-					req.body.initialMoney,
-					req.body.moneyUtilityFunction
-				),
-		};
+		if (!checkObjectStructure(req.body, gameStructure)) {
+			return res.status(409).send("Invalid request body structure.");
+		}
+		let correctProductsFormat = true;
+		req.body.availableProducts.forEach((product) => {
+			if (!correctProductsFormat) return;
+			if (product.isCrop) {
+				if (!checkObjectStructure(product, cropStructure)) {
+					correctProductsFormat = false;
+				}
+			} else {
+				if (!checkObjectStructure(product, productStructure)) {
+					correctProductsFormat = false;
+				}
+			}
+		});
+		if (!correctProductsFormat) {
+			return res.status(409).send("Invalid request body structure.");
+		}
+		let gameData = req.body;
+		gameData.host = req.user.uid;
+		gameData.currentRound = 0;
+		gameData.specialUpgradesEnabled = false;
+		gameData.useUpgrades = [];
+		gameData.roundSection = "Planting";
+		gameData.season = 0;
+		gameData.zeroBlendTime = false;
+		gameData.initialUtility =
+			req.body.moneyWeight *
+			moneyUtilityFunction(
+				req.body.initialMoney,
+				req.body.moneyUtilityFunction
+			);
 		let tooManyProducts = false;
 		Object.keys(gameData.availableProducts).forEach((product) => {
 			if (tooManyProducts) return;
@@ -418,6 +504,15 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 app.post("/joinGame", authenticateSession, async (req, res) => {
 	try {
 		await firestore.runTransaction(async (transaction) => {
+			if (
+				typeof req.body.gameId != "string" ||
+				req.body.gameId.length != 10
+			) {
+				throw new Error("Invalid game ID."); // add checking for numbers
+			}
+			if (typeof req.body.nickname != "string") {
+				throw new Error("Invalid nickname.");
+			}
 			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
 			let playerRef = getRef(
 				firestore,
@@ -426,22 +521,18 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				"players",
 				req.user.uid
 			);
-			let playersRef = getRef(
-				firestore,
-				"games",
-				req.body.gameId,
-				"players"
-			);
-			let [gameDataSnapshot, playersSnapshot] = await Promise.all([
+			let [gameDataSnapshot, playerSnapshot] = await Promise.all([
 				transaction.get(gameDataDoc),
-				transaction.get(playersRef),
+				transaction.get(playerRef),
 			]);
 			let gameData = gameDataSnapshot.data();
+			if (!gameDataSnapshot.exists()) {
+				throw new Error("Game does not exist.");
+			}
 			if (gameData.currentRound != 0) {
 				throw new Error("Game already started.");
 			}
-			let players = playersSnapshot.docs.map((doc) => doc.id);
-			if (players.includes(req.user.uid)) {
+			if (playerSnapshot.exists()) {
 				throw new Error("You have already joined the game.");
 			}
 			let efficiencies = {};
@@ -616,8 +707,15 @@ async function specialUpgradeLoop(gameDataDoc) {
 }
 app.post("/startGame", authenticateSession, async (req, res) => {
 	if (admins.includes(req.user.uid) || true) {
+		if (typeof req.body.gameId != "string") {
+			return res.status(409).send("Invalid game ID.");
+		}
 		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
-		let gameData = (await gameDataDoc.get()).data();
+		let gameDataSnapshot = await gameDataDoc.get();
+		if (!gameDataSnapshot.exists()) {
+			return res.status(409).send("Game does not exist.");
+		}
+		let gameData = gameDataSnapshot.data();
 		if (gameData.host != req.user.uid) {
 			return res.status(409).send("You are not the host of this game.");
 		}
@@ -634,61 +732,61 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		return res.status(401).send("Unauthorized");
 	}
 });
-app.post(
-	"/specialUpgradeBid",
-	authenticateSession,
-	checkInGame,
-	async (req, res) => {
-		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
-		let playerDoc = await getRef(gameDataDoc, "players", req.user.uid);
-		try {
-			await firestore.runTransaction(async function (transaction) {
-				let gameData = (await transaction.get(gameDataDoc)).data();
-				let playerData = (await transaction.get(playerDoc)).data();
-				if (gameData.currentRound == 0) {
-					throw new Error("The game has not started yet.");
-				}
-				if (gameData.currentRound > gameData.numRounds) {
-					throw new Error("The game has finished.");
-				}
-				if (!gameData.specialUpgradesEnabled) {
-					throw new Error("Special upgrades are not enabled.");
-				}
-				if (
-					Date.now() >= gameData.specialUpgradeBundle.endTimestamp ||
-					Object.keys(gameData.specialUpgradeBundle.upgradeBundle)
-						.length == 0
-				) {
-					throw new Error("There is no special upgrade active.");
-				}
-				if (req.body.bid > playerData.money) {
-					throw new Error("You do not have enough money.");
-				}
-				if (req.body.bid <= gameData.specialUpgradeBundle.currentBid) {
-					throw new Error("You must bid more than the last bid.");
-				}
-				let endTimestamp =
-					Date.now() + gameData.specialUpgradeIdle * 1000;
-				gameDataDoc.update({
-					specialUpgradeBundle: {
-						currentBid: req.body.bid,
-						currentHolder: req.user.uid,
-						endTimestamp: endTimestamp,
-						upgradeBundle:
-							gameData.specialUpgradeBundle.upgradeBundle,
-					},
-				});
-				setTimeout(function () {
-					checkAndAwardUpgrade(gameDataDoc, req.body.bid);
-				}, endTimestamp - Date.now());
-			});
-		} catch (e) {
-			return res
-				.status(409)
-				.send(e.message || "Conflict. Please try again.");
-		}
-	}
-);
+// app.post(
+// 	"/specialUpgradeBid",
+// 	authenticateSession,
+// 	checkInGame,
+// 	async (req, res) => {
+// 		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
+// 		let playerDoc = await getRef(gameDataDoc, "players", req.user.uid);
+// 		try {
+// 			await firestore.runTransaction(async function (transaction) {
+// 				let gameData = (await transaction.get(gameDataDoc)).data();
+// 				let playerData = (await transaction.get(playerDoc)).data();
+// 				if (gameData.currentRound == 0) {
+// 					throw new Error("The game has not started yet.");
+// 				}
+// 				if (gameData.currentRound > gameData.numRounds) {
+// 					throw new Error("The game has finished.");
+// 				}
+// 				if (!gameData.specialUpgradesEnabled) {
+// 					throw new Error("Special upgrades are not enabled.");
+// 				}
+// 				if (
+// 					Date.now() >= gameData.specialUpgradeBundle.endTimestamp ||
+// 					Object.keys(gameData.specialUpgradeBundle.upgradeBundle)
+// 						.length == 0
+// 				) {
+// 					throw new Error("There is no special upgrade active.");
+// 				}
+// 				if (req.body.bid > playerData.money) {
+// 					throw new Error("You do not have enough money.");
+// 				}
+// 				if (req.body.bid <= gameData.specialUpgradeBundle.currentBid) {
+// 					throw new Error("You must bid more than the last bid.");
+// 				}
+// 				let endTimestamp =
+// 					Date.now() + gameData.specialUpgradeIdle * 1000;
+// 				gameDataDoc.update({
+// 					specialUpgradeBundle: {
+// 						currentBid: req.body.bid,
+// 						currentHolder: req.user.uid,
+// 						endTimestamp: endTimestamp,
+// 						upgradeBundle:
+// 							gameData.specialUpgradeBundle.upgradeBundle,
+// 					},
+// 				});
+// 				setTimeout(function () {
+// 					checkAndAwardUpgrade(gameDataDoc, req.body.bid);
+// 				}, endTimestamp - Date.now());
+// 			});
+// 		} catch (e) {
+// 			return res
+// 				.status(409)
+// 				.send(e.message || "Conflict. Please try again.");
+// 		}
+// 	}
+// );
 app.post(
 	"/offerProduct",
 	authenticateSession,
@@ -696,6 +794,9 @@ app.post(
 	async (req, res) => {
 		try {
 			await firestore.runTransaction(async (transaction) => {
+				if (!checkObjectStructure(req.body, offeringStructure)) {
+					throw new Error("Invalid request body structure.");
+				}
 				let gameDataDoc = getRef(firestore, "games", req.body.gameId);
 				let playerDataDoc = getRef(
 					firestore,
@@ -752,6 +853,9 @@ app.post(
 	async (req, res) => {
 		try {
 			await firestore.runTransaction(async (transaction) => {
+				if (!checkObjectStructure(req.body, tradeStructure)) {
+					throw new Error("Invalid request body structure.");
+				}
 				req.body.num = parseInt(req.body.num) || 0;
 				if (req.body.num <= 0) {
 					throw new Error("Invalid number of products to trade.");
@@ -793,11 +897,11 @@ app.post(
 				let otherData = otherDataSnapshot.data();
 				if (
 					playerData.money <
-					req.body.num * otherData.offers[req.body.type].pricePer
+					req.body.num * otherData.offers[req.body.product].pricePer
 				) {
 					throw new Error("You do not have enough money.");
 				}
-				if (req.body.num > otherData.offers[req.body.type].num) {
+				if (req.body.num > otherData.offers[req.body.product].num) {
 					throw new Error(
 						"That is more than the other player is offering."
 					);
@@ -807,19 +911,22 @@ app.post(
 				transaction.update(playerDataDoc, {
 					money:
 						playerData.money -
-						req.body.num * otherData.offers[req.body.type].pricePer,
-					[`products.${req.body.type}`]:
-						uto0(playerData.products[req.body.type]) + req.body.num,
+						req.body.num *
+							otherData.offers[req.body.product].pricePer,
+					[`products.${req.body.product}`]:
+						uto0(playerData.products[req.body.product]) +
+						req.body.num,
 					utility: thisUtility,
 				});
 				transaction.update(otherDataDoc, {
 					money:
 						otherData.money +
-						req.body.num * otherData.offers[req.body.type].pricePer,
-					[`products.${req.body.type}`]:
-						otherData.products[req.body.type] - req.body.num,
-					[`offers.${req.body.type}.num`]:
-						otherData.offers[req.body.type].num - req.body.num,
+						req.body.num *
+							otherData.offers[req.body.product].pricePer,
+					[`products.${req.body.product}`]:
+						otherData.products[req.body.product] - req.body.num,
+					[`offers.${req.body.product}.num`]:
+						otherData.offers[req.body.product].num - req.body.num,
 					utility: otherUtility,
 				});
 			});
@@ -835,6 +942,9 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 	// authenticateSession, checkInGame, TODO: YOU BETTER REMEMBER TO ADD THIS BACK
 	try {
 		await firestore.runTransaction(async (transaction) => {
+			if (!checkObjectStructure(req.body, plantStructure)) {
+				throw new Error("Invalid request body structure.");
+			}
 			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
 			let playerDataDoc = getRef(
 				firestore,
@@ -872,7 +982,7 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 			if (
 				!Object.keys(gameData.availableProducts).includes(req.body.seed)
 			) {
-				throw new Error("That crop isn't in play.");
+				throw new Error("That crop is not in play.");
 			}
 			if (!gameData.availableProducts[req.body.seed].isCrop) {
 				throw new Error("That is not a crop.");
@@ -901,6 +1011,9 @@ app.post("/plantSeed", authenticateSession, checkInGame, async (req, res) => {
 app.post("/buySeed", authenticateSession, checkInGame, async (req, res) => {
 	try {
 		await firestore.runTransaction(async (transaction) => {
+			if (!checkObjectStructure(req.body, buySeedStructure)) {
+				throw new Error("Invalid request body structure.");
+			}
 			let gameDataDoc = getRef(firestore, "games", req.body.gameId);
 			let playerDataDoc = getRef(
 				firestore,
@@ -1016,6 +1129,9 @@ async function startBlend(
 app.post("/queueBlend", authenticateSession, checkInGame, async (req, res) => {
 	try {
 		await firestore.runTransaction(async function (transaction) {
+			if (!checkObjectStructure(req.body, blendStructure)) {
+				throw new Error("Invalid request body structure.");
+			}
 			let gameDoc = getRef(
 				firestore,
 				"games",
