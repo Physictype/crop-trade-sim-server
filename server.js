@@ -293,10 +293,10 @@ function checkObjectStructure(obj, structure) {
 		if (obj[key] == NaN) {
 			works = false;
 		}
-		works &= getType(obj[key]) == structure[key];
+		works &&= (getType(obj[key]) == structure[key]);
 	});
 	Object.keys(obj).forEach((key) => {
-		works &= Object.keys(structure).includes(key);
+		works &&= Object.keys(structure).includes(key);
 	});
 	return works;
 }
