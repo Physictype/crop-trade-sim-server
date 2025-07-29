@@ -279,7 +279,7 @@ function calculateUtility(playerData, gameData) {
 }
 
 function getType(obj) {
-	Object.prototype.toString
+	return Object.prototype.toString
 		.call(obj)
 		.split(" ")[1]
 		.split("]")[0]
@@ -353,7 +353,7 @@ app.get("/authenticated", async (req, res) => {
 });
 
 let gameStructure = {
-	availableProducts: "array",
+	availableProducts: "object",
 	numRounds: "number",
 	plantingTime: "number",
 	offeringTime: "number",
@@ -418,7 +418,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			return res.status(409).send("Invalid request body structure.");
 		}
 		let correctProductsFormat = true;
-		req.body.availableProducts.forEach((product) => {
+		Object.values(req.body.availableProducts).forEach((product) => {
 			if (!correctProductsFormat) return;
 			if (product.isCrop) {
 				if (!checkObjectStructure(product, cropStructure)) {
