@@ -525,7 +525,7 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				transaction.get(gameDataDoc),
 				transaction.get(playerRef),
 			]);
-			console.log(gameDataSnapshot.empty);
+			console.log(gameDataSnapshot);
 			if (!gameDataSnapshot.exists()) {
 				throw new Error("Game does not exist.");
 			}
