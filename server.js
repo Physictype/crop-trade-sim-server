@@ -525,10 +525,11 @@ app.post("/joinGame", authenticateSession, async (req, res) => {
 				transaction.get(gameDataDoc),
 				transaction.get(playerRef),
 			]);
-			let gameData = gameDataSnapshot.data();
+			console.log(gameDataSnapshot.empty);
 			if (!gameDataSnapshot.exists()) {
 				throw new Error("Game does not exist.");
 			}
+			let gameData = gameDataSnapshot.data();
 			if (gameData.currentRound != 0) {
 				throw new Error("Game already started.");
 			}
