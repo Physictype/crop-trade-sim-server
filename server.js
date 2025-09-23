@@ -447,6 +447,8 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 				req.body.initialMoney,
 				req.body.moneyUtilityFunction
 			);
+		gameData.paused = false;
+		gameData.pauseTimestamp = 0;
 		let tooManyProducts = false;
 		Object.keys(gameData.availableProducts).forEach((product) => {
 			if (tooManyProducts) return;
@@ -607,45 +609,81 @@ async function nextSeason(gameDataDoc) {
 		});
 	});
 }
-async function roundLoop(gameDataDoc) {
+
+let nextSectionMap = {
+	"Planting": "Offering",
+	"Offering": "Trading",
+	"Trading": "Planting",
+}
+
+async function roundSectionLoop(gameDataDoc,roundSection,offset=0) {
 	var gameData = (await gameDataDoc.get()).data();
+	if (gameData.paused) return;
 	if (gameData.currentRound >= gameData.numRounds) {
 		await gameDataDoc.update({
 			currentRound: gameData.currentRound + 1,
 		});
 		return;
 	}
-	if (gameData.currentRound == 0) {
-		var currEndTimestamp = Date.now() + gameData.plantingTime * 1000;
-	} else {
-		var currEndTimestamp =
-			gameData.endTimestamp + gameData.plantingTime * 1000;
-	}
+	// TODO: gameData.endTimestamp = Date.now() in startGame
+	let sectionTime = {
+		"Planting": gameData.plantingTime,
+		"Offering": gameData.offeringTime,
+		"Trading": gameData.tradingTime,
+	}[roundSection];
+	var currEndTimestamp =
+		gameData.endTimestamp + sectionTime * 1000 - offset;
 
 	await gameDataDoc.update({
-		currentRound: gameData.currentRound + 1,
+		currentRound: gameData.currentRound + (roundSection == "Planting"),
 		endTimestamp: currEndTimestamp,
 	});
 	setTimeout(async function () {
-		nextSeason(gameDataDoc);
-		currEndTimestamp += gameData.offeringTime * 1000;
-		await gameDataDoc.update({
-			roundSection: "Offering",
-			endTimestamp: currEndTimestamp,
-		});
-		setTimeout(async function () {
-			currEndTimestamp += gameData.tradingTime * 1000;
-			await gameDataDoc.update({
-				roundSection: "Trading",
-				endTimestamp: currEndTimestamp,
-			});
-			setTimeout(async function () {
-				await gameDataDoc.update({ roundSection: "Planting" });
-				roundLoop(gameDataDoc);
-			}, currEndTimestamp - Date.now());
-		}, currEndTimestamp - Date.now());
+		if (roundSection == "Planting") {
+			nextSeason(gameDataDoc);
+		}
+		advanceRoundSection(gameDataDoc,nextSectionMap[roundSection]);
 	}, currEndTimestamp - Date.now());
 }
+// async function roundLoop(gameDataDoc,offset=0) {
+// 	var gameData = (await gameDataDoc.get()).data();
+// 	if (gameData.currentRound >= gameData.numRounds) {
+// 		await gameDataDoc.update({
+// 			currentRound: gameData.currentRound + 1,
+// 		});
+// 		return;
+// 	}
+// 	if (gameData.currentRound == 0) {
+// 		var currEndTimestamp = Date.now() + gameData.plantingTime * 1000 - offset;
+// 	} else {
+// 		var currEndTimestamp =
+// 			gameData.endTimestamp + gameData.plantingTime * 1000 - offset;
+// 	}
+
+// 	await gameDataDoc.update({
+// 		currentRound: gameData.currentRound + 1,
+// 		endTimestamp: currEndTimestamp,
+// 	});
+// 	setTimeout(async function () {
+// 		nextSeason(gameDataDoc);
+// 		currEndTimestamp += gameData.offeringTime * 1000;
+// 		await gameDataDoc.update({
+// 			roundSection: "Offering",
+// 			endTimestamp: currEndTimestamp,
+// 		});
+// 		setTimeout(async function () {
+// 			currEndTimestamp += gameData.tradingTime * 1000;
+// 			await gameDataDoc.update({
+// 				roundSection: "Trading",
+// 				endTimestamp: currEndTimestamp,
+// 			});
+// 			setTimeout(async function () {
+// 				await gameDataDoc.update({ roundSection: "Planting" });
+// 				roundLoop(gameDataDoc);
+// 			}, currEndTimestamp - Date.now());
+// 		}, currEndTimestamp - Date.now());
+// 	}, currEndTimestamp - Date.now());
+// }
 async function checkAndAwardUpgrade(gameDataDoc, expectedBid) {
 	let gameData = (await gameDataDoc.get()).data();
 	if (gameData.currentRound >= gameData.numRounds) {
@@ -723,7 +761,10 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		if (gameData.currentRound > 0) {
 			return res.status(409).send("Game already started.");
 		} else {
-			roundLoop(gameDataDoc);
+			await gameDataDoc.update({
+				endTimestamp: Date.now()
+			})
+			roundSectionLoop(gameDataDoc,"Planting");
 			if (gameData.specialUpgradesEnabled) {
 				specialUpgradeLoop(gameDataDoc);
 			}
@@ -733,6 +774,56 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		return res.status(401).send("Unauthorized");
 	}
 });
+
+app.post("/pauseResumeGame", authenticateSession, async (req,res) => {
+	if (admins.includes(req.user.uid) || true) {
+		if (typeof req.body.gameId != "string") {
+			return res.status(409).send("Invalid game ID.");
+		}
+		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
+		let gameDataSnapshot = await gameDataDoc.get();
+		let gameData = gameDataSnapshot.data();
+		if (gameData == null) {
+			return res.status(409).send("Game does not exist.");
+		}
+		if (gameData.host != req.user.uid) {
+			return res.status(409).send("You are not the host of this game.");
+		}
+		if (gameData.currentRound == 0) {
+			return res.status(409).send("Game has not been started yet.")
+		}
+		if (gameData.paused) {
+			await gameDataDoc.update({
+				paused: false,
+				endTimestamp: Date.now()
+			})
+			let sectionTime = {
+				"Planting": gameData.plantingTime,
+				"Offering": gameData.offeringTime,
+				"Trading": gameData.tradingTime,
+			}[gameData.roundSection];
+			roundSectionLoop(gameDataDoc,gameData.roundSection,sectionTime*1000-(gameData.endTimestamp-pauseTimestamp));
+			return res.status(200).send("Game resumed.")
+		} else {
+			await gameDataDoc.update({
+				paused: true,
+				pauseTimestamp: Date.now()
+			});
+			return res.status(200).send("Game paused.")
+		}
+		// if (gameData.currentRound > 0) {
+		// 	return res.status(409).send("Game already started.");
+		// } else {
+		// 	roundLoop(gameDataDoc);
+		// 	if (gameData.specialUpgradesEnabled) {
+		// 		specialUpgradeLoop(gameDataDoc);
+		// 	}
+		// 	return res.status(200).send("Game started.");
+		// }
+	} else {
+		return res.status(401).send("Unauthorized");
+	}
+})
 // app.post(
 // 	"/specialUpgradeBid",
 // 	authenticateSession,
