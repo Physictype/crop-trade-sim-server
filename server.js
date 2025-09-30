@@ -447,8 +447,9 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 				req.body.initialMoney,
 				req.body.moneyUtilityFunction
 			);
-		gameData.paused = false;
+		gameData.paused = true;
 		gameData.pauseTimestamp = 0;
+		gameData.endTimestamp = 0;
 		let tooManyProducts = false;
 		Object.keys(gameData.availableProducts).forEach((product) => {
 			if (tooManyProducts) return;
