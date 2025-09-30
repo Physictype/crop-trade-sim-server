@@ -638,6 +638,7 @@ async function roundSectionLoop(gameDataDoc,roundSection,offset=0) {
 	await gameDataDoc.update({
 		currentRound: gameData.currentRound + (roundSection == "Planting"),
 		endTimestamp: currEndTimestamp,
+		roundSection: roundSection,
 	});
 	setTimeout(async function () {
 		if (roundSection == "Planting") {
