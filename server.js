@@ -643,7 +643,7 @@ async function roundSectionLoop(gameDataDoc,roundSection,offset=0) {
 		if (roundSection == "Planting") {
 			nextSeason(gameDataDoc);
 		}
-		advanceRoundSection(gameDataDoc,nextSectionMap[roundSection]);
+		roundSectionLoop(gameDataDoc,nextSectionMap[roundSection]);
 	}, currEndTimestamp - Date.now());
 }
 // async function roundLoop(gameDataDoc,offset=0) {
