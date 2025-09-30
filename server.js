@@ -769,7 +769,7 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 				"Offering": gameData.offeringTime,
 				"Trading": gameData.tradingTime,
 			}[gameData.roundSection];
-			roundSectionLoop(gameDataDoc,gameData.roundSection,sectionTime*1000-(gameData.endTimestamp-gameData.pauseTimestamp));
+			roundSectionLoop(gameDataDoc,gameData.roundSection,-(gameData.endTimestamp-gameData.pauseTimestamp));
 			return res.status(200).send("Game resumed.")
 		} else {
 			return res.status(409).send("The game is currently running.");
