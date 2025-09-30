@@ -758,40 +758,6 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		if (gameData.host != req.user.uid) {
 			return res.status(409).send("You are not the host of this game.");
 		}
-		if (gameData.currentRound > 0) {
-			return res.status(409).send("Game already started.");
-		} else {
-			await gameDataDoc.update({
-				endTimestamp: Date.now()
-			})
-			roundSectionLoop(gameDataDoc,"Planting");
-			if (gameData.specialUpgradesEnabled) {
-				specialUpgradeLoop(gameDataDoc);
-			}
-			return res.status(200).send("Game started.");
-		}
-	} else {
-		return res.status(401).send("Unauthorized");
-	}
-});
-
-app.post("/pauseResumeGame", authenticateSession, async (req,res) => {
-	if (admins.includes(req.user.uid) || true) {
-		if (typeof req.body.gameId != "string") {
-			return res.status(409).send("Invalid game ID.");
-		}
-		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
-		let gameDataSnapshot = await gameDataDoc.get();
-		let gameData = gameDataSnapshot.data();
-		if (gameData == null) {
-			return res.status(409).send("Game does not exist.");
-		}
-		if (gameData.host != req.user.uid) {
-			return res.status(409).send("You are not the host of this game.");
-		}
-		if (gameData.currentRound == 0) {
-			return res.status(409).send("Game has not been started yet.")
-		}
 		if (gameData.paused) {
 			await gameDataDoc.update({
 				paused: false,
@@ -805,25 +771,41 @@ app.post("/pauseResumeGame", authenticateSession, async (req,res) => {
 			roundSectionLoop(gameDataDoc,gameData.roundSection,sectionTime*1000-(gameData.endTimestamp-pauseTimestamp));
 			return res.status(200).send("Game resumed.")
 		} else {
+			return res.status(409).send("The game is currently running.");
+		}
+	} else {
+		return res.status(401).send("Unauthorized");
+	}
+});
+
+app.post("/stopGame", authenticateSession, async (req, res) => {
+	if (admins.includes(req.user.uid) || true) {
+		if (typeof req.body.gameId != "string") {
+			return res.status(409).send("Invalid game ID.");
+		}
+		let gameDataDoc = await getRef(firestore, "games", req.body.gameId);
+		let gameDataSnapshot = await gameDataDoc.get();
+		let gameData = gameDataSnapshot.data();
+		if (gameData == null) {
+			return res.status(409).send("Game does not exist.");
+		}
+		if (gameData.host != req.user.uid) {
+			return res.status(409).send("You are not the host of this game.");
+		}
+		if (gameData.paused) {
+			return res.status(409).send("The game is currently not running.");
+		} else {
 			await gameDataDoc.update({
 				paused: true,
 				pauseTimestamp: Date.now()
 			});
 			return res.status(200).send("Game paused.")
 		}
-		// if (gameData.currentRound > 0) {
-		// 	return res.status(409).send("Game already started.");
-		// } else {
-		// 	roundLoop(gameDataDoc);
-		// 	if (gameData.specialUpgradesEnabled) {
-		// 		specialUpgradeLoop(gameDataDoc);
-		// 	}
-		// 	return res.status(200).send("Game started.");
-		// }
 	} else {
 		return res.status(401).send("Unauthorized");
 	}
-})
+});
+
 // app.post(
 // 	"/specialUpgradeBid",
 // 	authenticateSession,
