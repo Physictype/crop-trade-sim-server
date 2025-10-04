@@ -449,7 +449,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			);
 		gameData.paused = true;
 		gameData.pauseTimestamp = 0;
-		gameData.endTimestamp = gameData.plantingTime;
+		gameData.endTimestamp = gameData.plantingTime * 1000;
 		gameData.processId = -1;
 		let tooManyProducts = false;
 		Object.keys(gameData.availableProducts).forEach((product) => {
@@ -764,6 +764,9 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		if (gameData.host != req.user.uid) {
 			return res.status(409).send("You are not the host of this game.");
 		}
+		if (gameData.currentRound > gameData.numRounds) {
+			throw new Error("The game has ended.");
+		}
 		if (gameData.paused) {
 			await gameDataDoc.update({
 				paused: false,
@@ -798,6 +801,9 @@ app.post("/stopGame", authenticateSession, async (req, res) => {
 		}
 		if (gameData.host != req.user.uid) {
 			return res.status(409).send("You are not the host of this game.");
+		}
+		if (gameData.currentRound > gameData.numRounds) {
+			throw new Error("The game has ended.");
 		}
 		if (gameData.paused) {
 			return res.status(409).send("The game is currently not running.");
