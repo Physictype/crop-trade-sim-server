@@ -449,7 +449,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 			);
 		gameData.paused = true;
 		gameData.pauseTimestamp = 0;
-		gameData.endTimestamp = 0;
+		gameData.endTimestamp = gameData.plantingTime;
 		let tooManyProducts = false;
 		Object.keys(gameData.availableProducts).forEach((product) => {
 			if (tooManyProducts) return;
@@ -617,7 +617,7 @@ let nextSectionMap = {
 	"Trading": "Planting",
 }
 
-async function roundSectionLoop(gameDataDoc,roundSection,offset=0) {
+async function roundSectionLoop(gameDataDoc,roundSection,time=null) {
 	var gameData = (await gameDataDoc.get()).data();
 	if (gameData.paused) return;
 	if (gameData.currentRound >= gameData.numRounds) {
@@ -627,13 +627,16 @@ async function roundSectionLoop(gameDataDoc,roundSection,offset=0) {
 		return;
 	}
 	// TODO: gameData.endTimestamp = Date.now() in startGame
-	let sectionTime = {
-		"Planting": gameData.plantingTime,
-		"Offering": gameData.offeringTime,
-		"Trading": gameData.tradingTime,
-	}[roundSection];
+	if (!time) {
+		let sectionTime = {
+			"Planting": gameData.plantingTime,
+			"Offering": gameData.offeringTime,
+			"Trading": gameData.tradingTime,
+		}[roundSection];
+		time = sectionTime * 1000;
+	}
 	var currEndTimestamp =
-		gameData.endTimestamp + sectionTime * 1000 - offset;
+		gameData.endTimestamp + time;
 
 	await gameDataDoc.update({
 		currentRound: gameData.currentRound + (roundSection == "Planting"),
