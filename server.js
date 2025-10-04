@@ -450,6 +450,7 @@ app.post("/createGame", authenticateSession, async (req, res) => {
 		gameData.paused = true;
 		gameData.pauseTimestamp = 0;
 		gameData.endTimestamp = gameData.plantingTime;
+		gameData.processId = -1;
 		let tooManyProducts = false;
 		Object.keys(gameData.availableProducts).forEach((product) => {
 			if (tooManyProducts) return;
@@ -617,9 +618,9 @@ let nextSectionMap = {
 	"Trading": "Planting",
 }
 
-async function roundSectionLoop(gameDataDoc,roundSection,time=null) {
+async function roundSectionLoop(gameDataDoc,roundSection,id,time=null) {
 	var gameData = (await gameDataDoc.get()).data();
-	if (gameData.paused) return;
+	if (gameData.paused || gameData.processId > id) return;
 	if (gameData.currentRound >= gameData.numRounds) {
 		await gameDataDoc.update({
 			currentRound: gameData.currentRound + 1,
@@ -647,7 +648,7 @@ async function roundSectionLoop(gameDataDoc,roundSection,time=null) {
 		if (roundSection == "Planting") {
 			nextSeason(gameDataDoc);
 		}
-		roundSectionLoop(gameDataDoc,nextSectionMap[roundSection]);
+		roundSectionLoop(gameDataDoc,nextSectionMap[roundSection],id);
 	}, currEndTimestamp - Date.now());
 }
 // async function roundLoop(gameDataDoc,offset=0) {
@@ -766,14 +767,15 @@ app.post("/startGame", authenticateSession, async (req, res) => {
 		if (gameData.paused) {
 			await gameDataDoc.update({
 				paused: false,
-				endTimestamp: Date.now()
+				endTimestamp: Date.now(),
+				processId: gameData.processId+1,
 			})
 			let sectionTime = {
 				"Planting": gameData.plantingTime,
 				"Offering": gameData.offeringTime,
 				"Trading": gameData.tradingTime,
 			}[gameData.roundSection];
-			roundSectionLoop(gameDataDoc,gameData.roundSection,(gameData.endTimestamp-gameData.pauseTimestamp));
+			roundSectionLoop(gameDataDoc,gameData.roundSection,gameData.processId+1,(gameData.endTimestamp-gameData.pauseTimestamp));
 			return res.status(200).send("Game resumed.")
 		} else {
 			return res.status(409).send("The game is currently running.");
