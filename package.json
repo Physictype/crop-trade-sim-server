@@ -6,7 +6,7 @@
 		"express": "^5.2.0",
 		"firebase": "^11.6.1",
 		"firebase-admin": "^13.3.0",
-		"lodash": "^4.17.21",
+		"lodash": "^4.17.23",
 		"npm": "^11.6.3"
 	},
 	"type": "module"
